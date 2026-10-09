@@ -17,6 +17,7 @@
   <link rel="stylesheet" href="enhancements.css">
   <link rel="stylesheet" href="profiles.css">
   <link rel="stylesheet" href="imagery.css">
+  <link rel="stylesheet" href="homepage.css">
   <script src="app.js" defer></script>
 </head>
 <body>
@@ -40,12 +41,12 @@
       <div class="hero-shade"></div>
       <div class="container hero-inner">
         <div class="hero-copy">
-          <p class="eyebrow"><span class="eyebrow-rule"></span>Opportunity starts with a connection</p>
-          <h1 id="hero-title">Where businesses<br>connect<span class="cyan">.</span></h1>
-          <p class="hero-description">Give your company a permanent home for discovery, live presentations, and lasting business relationships.</p>
+          <p class="eyebrow"><span class="eyebrow-rule"></span>The online business expo</p>
+          <h1 id="hero-title">Where businesses meet<span class="cyan">.</span><br>Opportunities begin<span class="cyan">.</span></h1>
+          <p class="hero-description">Discover companies, build partnerships, and connect face-to-face at live virtual business expos—anytime, anywhere.</p>
           <div class="hero-actions">
-            <button class="button button-primary" data-open-join>Join BOND <span aria-hidden="true">↗</span></button>
-            <a class="button button-outline" href="#businesses">Explore businesses <span aria-hidden="true">→</span></a>
+            <a class="button button-primary" href="#discover">Explore businesses <span aria-hidden="true">→</span></a>
+            <button class="button button-outline" data-open-join>Create your company profile <span aria-hidden="true">↗</span></button>
           </div>
           <p class="hero-note">Company profiles. Real introductions. An always-open network.</p>
         </div>
@@ -53,7 +54,50 @@
       </div>
       <div class="container hero-bottom">
         <p>A network built around companies.</p>
-        <a href="#about">Discover the BOND idea <span aria-hidden="true">↓</span></a>
+        <a href="#discover">Start discovering <span aria-hidden="true">↓</span></a>
+      </div>
+    </section>
+
+    <section id="discover" class="section home-discover" aria-labelledby="discover-title">
+      <div class="container">
+        <div class="discover-top">
+          <div><p class="eyebrow">Start with what you need</p><h2 id="discover-title">Find a partner, supplier,<br>or your next customer<span class="cyan">.</span></h2></div>
+          <form id="home-search" class="home-search" role="search" action="#businesses">
+            <label class="sr-only" for="home-search-input">Search businesses, services, or industries</label>
+            <div class="search-field"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 4.5 4.5"/></svg><input id="home-search-input" type="search" placeholder="Try “fabrication”, “logistics”, or “software”" autocomplete="off"></div>
+            <button class="button button-primary" type="submit">Search <span aria-hidden="true">→</span></button>
+          </form>
+        </div>
+        <nav class="industry-strip" aria-label="Browse by industry">
+          <a class="industry-tile" href="?industry=Aerospace%20%26%20Defense#businesses" data-industry-jump="Aerospace &amp; Defense"><img src="assets/industry-aerospace.jpg" alt="" width="800" height="600" loading="lazy" decoding="async"><span>Aerospace &amp; Defense</span></a>
+          <a class="industry-tile" href="?industry=Engineering#businesses" data-industry-jump="Engineering"><img src="assets/industry-engineering.jpg" alt="" width="800" height="600" loading="lazy" decoding="async"><span>Engineering</span></a>
+          <a class="industry-tile" href="?industry=Construction#businesses" data-industry-jump="Construction"><img src="assets/industry-construction.jpg" alt="" width="800" height="600" loading="lazy" decoding="async"><span>Construction</span></a>
+          <a class="industry-tile" href="?industry=Technology#businesses" data-industry-jump="Technology"><img src="assets/industry-software.jpg" alt="" width="800" height="600" loading="lazy" decoding="async"><span>Software &amp; Technology</span></a>
+          <a class="industry-tile" href="?industry=Logistics#businesses" data-industry-jump="Logistics"><img src="assets/industry-logistics.jpg" alt="" width="800" height="600" loading="lazy" decoding="async"><span>Logistics</span></a>
+          <a class="industry-tile" href="?industry=Manufacturing#businesses" data-industry-jump="Manufacturing"><img src="assets/industry-manufacturing.jpg" alt="" width="800" height="600" loading="lazy" decoding="async"><span>Manufacturing</span></a>
+          <a class="industry-tile" href="?industry=Energy#businesses" data-industry-jump="Energy"><img src="assets/industry-energy.jpg" alt="" width="800" height="600" loading="lazy" decoding="async"><span>Energy</span></a>
+          <a class="industry-tile" href="?industry=Professional%20services#businesses" data-industry-jump="Professional services"><img src="assets/collaboration.png" alt="" width="1536" height="1024" loading="lazy" decoding="async"><span>Professional services</span></a>
+        </nav>
+        <div class="home-highlights">
+          <div class="featured-block">
+            <div class="highlight-heading"><h3>Featured businesses</h3><span class="preview-pill">Sample companies</span></div>
+            <div id="featured-grid" class="featured-grid"></div>
+          </div>
+          <aside class="next-expo" aria-labelledby="next-expo-title">
+            <div class="next-expo-media"><img src="assets/spotlight-selected.png" alt="A business owner presents her company to a camera" width="1024" height="576" loading="lazy" decoding="async"><span class="next-expo-badge">Next live expo</span></div>
+            <div class="next-expo-body">
+              <p class="next-expo-kicker">Industry showcase · Sample schedule</p>
+              <h3 id="next-expo-title">Aerospace &amp; Engineering Showcase</h3>
+              <ol class="next-expo-lineup">
+                <li><span>10:00</span>AeroWorks Studio<small>Systems integration</small></li>
+                <li><span>10:05</span>Vector Engineering<small>Design support</small></li>
+                <li><span>10:10</span>ForgeWorks Manufacturing<small>Prototyping</small></li>
+              </ol>
+              <a class="button button-primary button-wide" href="expos.html">Preview the expo <span aria-hidden="true">↗</span></a>
+              <p class="next-expo-note">Five-minute live Spotlights with Q&amp;A. Live scheduling is planned; this lineup is illustrative.</p>
+            </div>
+          </aside>
+        </div>
       </div>
     </section>
 
@@ -80,7 +124,7 @@
     <section id="businesses" class="section directory-section" aria-labelledby="directory-title">
       <div class="container">
         <div class="section-heading section-heading-with-photo">
-          <div><p class="eyebrow">Discover the network</p><h2 id="directory-title">Find the business<br>behind the opportunity<span class="cyan">.</span></h2><p class="section-side-copy">Search by services, industry, and location.<br>Meet the representatives behind the company.</p></div>
+          <div><p class="eyebrow">Discover the network</p><h2 id="directory-title">Find the business<br>behind the opportunity<span class="cyan">.</span></h2><p class="section-side-copy">Search by service, industry, or location. Open any company to see what it does, save it, message a representative, or request a meeting.</p></div>
           <figure class="section-photo directory-photo"><img src="assets/expo-hero.png" alt="Business representatives talk and exchange a card at an expo booth" width="1672" height="940" loading="lazy" decoding="async"><figcaption>Every company starts with a conversation.<small>BOND visual concept</small></figcaption></figure>
         </div>
         <div class="directory-toolbar">
@@ -133,7 +177,7 @@
     <section class="section join-section" aria-labelledby="join-title">
       <div class="container join-layout">
         <div><p class="eyebrow">A place for your business</p><h2 id="join-title">Make your next<br>connection count<span class="cyan">.</span></h2><p class="section-copy">Bring your business into the conversation.</p></div>
-        <div class="join-action"><button class="button button-primary button-wide" data-open-join>Explore your company profile <span aria-hidden="true">↗</span></button><p>This is a design preview of BOND.<br>Try a sample profile to see the direction.</p></div>
+        <div class="join-action"><button class="button button-primary button-wide" data-open-join>Create your company profile <span aria-hidden="true">↗</span></button><p>This is a design preview of BOND.<br>Try a sample profile to see the direction.</p></div>
       </div>
     </section>
   </main>

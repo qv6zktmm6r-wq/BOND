@@ -42,3 +42,11 @@ New placement: Home-page company discovery heading. Existing hero and networking
 Asset: `/workspace/sites/joinbond/dist/assets/spotlight-selected.png`
 
 On October 9, 2026, the user selected their attached `image(1).png` for the Business Spotlight preview. Copied unchanged into the Site. Used by the shared stage on Home and Live Expos. The other mixed-group photos remain in place. No new generation or image modification was performed.
+
+## Industry photography
+
+Assets: `dist/assets/industry-aerospace.jpg`, `industry-engineering.jpg`, `industry-construction.jpg`, `industry-software.jpg`, `industry-logistics.jpg`, `industry-manufacturing.jpg`, `industry-energy.jpg`
+
+Generated with Cursor's built-in image generation on October 9, 2026, at the owner's request, then resized to 800 × 600 JPEG. Each shows two business people from different backgrounds working in that industry, in BOND's navy/cobalt palette, with no text or logos. The people and scenes are illustrative, not real BOND customers.
+
+Placement: Home-page industry strip and featured-business covers. Professional services reuses `collaboration.png`.

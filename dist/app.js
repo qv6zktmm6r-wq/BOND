@@ -499,6 +499,53 @@
     });
   }
 
+  const featuredIds = ["aero", "fieldstone", "lumen", "nova"];
+  const industryImages = {
+    "Aerospace & Defense": "assets/industry-aerospace.jpg",
+    Engineering: "assets/industry-engineering.jpg",
+    Construction: "assets/industry-construction.jpg",
+    Technology: "assets/industry-software.jpg",
+    Logistics: "assets/industry-logistics.jpg",
+    Manufacturing: "assets/industry-manufacturing.jpg",
+    Energy: "assets/industry-energy.jpg",
+    "Professional services": "assets/collaboration.png",
+  };
+
+  function renderFeatured() {
+    const grid = document.getElementById("featured-grid");
+    if (!grid) return;
+    const content = document.createDocumentFragment();
+    for (const id of featuredIds) {
+      const profile = resolveProfile(id);
+      if (!profile) continue;
+      const card = element("article", "featured-card");
+      const cover = element("div", "featured-cover");
+      const image = element("img");
+      image.src = industryImages[profile.category] || "assets/expo-hero.png";
+      image.alt = "";
+      image.loading = "lazy";
+      image.decoding = "async";
+      cover.append(image);
+      const logo = element("div", "company-avatar featured-logo");
+      logo.append(companyLogo(profile));
+      const body = element("div", "featured-body");
+      body.append(element("p", "company-category", profile.category), element("h4", "", profile.name), element("p", "featured-location", profile.location));
+      const open = element("button", "company-link", "View company profile");
+      open.type = "button";
+      open.setAttribute("aria-label", `View ${profile.name} sample profile`);
+      open.addEventListener("click", () => openCompany(profile, open));
+      body.append(open);
+      card.append(cover, logo, body);
+      content.append(card);
+    }
+    grid.replaceChildren(content);
+  }
+
+  function showDirectory() {
+    renderDirectory();
+    document.getElementById("businesses")?.scrollIntoView({ block: "start" });
+  }
+
   function showDialog(dialog, opener) {
     if (!dialog) return;
     if (!dialog.open) {
@@ -1176,6 +1223,22 @@
       });
     }
 
+    document.getElementById("home-search")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const search = document.getElementById("directory-search");
+      if (search) search.value = cleanText(document.getElementById("home-search-input")?.value, 80);
+      currentFilter = "All";
+      showDirectory();
+    });
+    document.querySelectorAll("[data-industry-jump]").forEach((link) => {
+      link.addEventListener("click", (event) => {
+        const next = link.dataset.industryJump;
+        if (!categories.includes(next)) return;
+        event.preventDefault();
+        currentFilter = next;
+        showDirectory();
+      });
+    });
     document.getElementById("directory-search")?.addEventListener("input", renderDirectory);
     document.getElementById("directory-location")?.addEventListener("change", renderDirectory);
     document.getElementById("directory-ownership")?.addEventListener("change", renderDirectory);
@@ -1329,6 +1392,7 @@
     });
 
     renderDirectory();
+    renderFeatured();
     renderOpportunities();
     renderFullCompanyProfile();
   }

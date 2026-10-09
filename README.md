@@ -26,8 +26,8 @@ Open http://localhost:3000. The site is plain HTML, CSS, and JavaScript; it need
 - `dist/expos.html` — interactive expo preview.
 - `dist/company.html` — company profile preview.
 - `dist/app.js` — shared interactions, demo profiles, filters, and browser-local behavior.
-- `dist/*.css` — original styles.
-- `dist/assets/` — original BOND logos and photography.
+- `dist/*.css` — styles; `dist/homepage.css` holds the homepage discovery section (search, industry strip, featured businesses, next-expo preview).
+- `dist/assets/` — BOND logos and photography, including the `industry-*.jpg` tiles.
 - `vercel.json` — Vercel hosting: serves `dist/` as-is, no build step.
 - `ASSET_NOTES.md` — photography provenance and user-selected imagery.
 - `docs/original-site-text-snapshot.txt` — earlier content reference.
