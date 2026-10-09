@@ -538,7 +538,12 @@
         const text = cleanMessage(message.text);
         const timestamp = typeof message.at === "string" ? Date.parse(message.at) : NaN;
         if (!text || !Number.isFinite(timestamp)) return [];
-        return [{ text, at: new Date(timestamp).toISOString() }];
+        const entry = { text, at: new Date(timestamp).toISOString() };
+        if (typeof message.recording === "string" && /^rec-[a-z0-9-]{1,60}$/.test(message.recording)) {
+          entry.recording = message.recording;
+          entry.seconds = Number.isFinite(message.seconds) ? Math.min(Math.max(Math.round(message.seconds), 0), 600) : 0;
+        }
+        return [entry];
       });
     }
     return result;
@@ -1047,7 +1052,7 @@
     const ownership = ownershipLabel(profile);
     if (ownership) {
       container.append(ownership);
-      container.append(element("p", "ownership-note", "Self-reported demo label. Certification status is not provided; this sample does not assert VOSB or SDVOSB certification."));
+      container.append(element("p", "ownership-note", "Self-reported ownership label. This sample does not assert VOSB or SDVOSB certification."));
     }
     if (profile.services.length) {
       container.append(element("h4", "detail-label", "Capabilities"), serviceTags(profile));
@@ -1386,6 +1391,7 @@
   function renderExpoPanel(profile, initialTab = "profile") {
     const container = document.getElementById("expo-company-info");
     if (!container) return;
+    activeVoice?.finish();
     currentExpoProfile = profile;
     container.replaceChildren();
     const header = element("div", "expo-panel-header");
@@ -1456,12 +1462,17 @@
   const premiereTags = { ready: "Premiere · Recorded Spotlight", premiere: "Premiering now · Recorded", qa: "Live Q&A · Open" };
   const sampleQuestions = {
     nova: [
-      { text: "Do you handle same-day deliveries across Southern California?", answer: "For scheduled regional routes, yes. We plan same-day windows with each client." },
-      { text: "Can your dispatch reporting connect to our existing inventory system?" },
+      { text: "Do you handle same-day deliveries across Southern California?", audio: "assets/qa/nova-q1.m4a", answer: "For scheduled regional routes, yes. We plan same-day windows with each client.", answerAudio: "assets/qa/nova-a1.m4a" },
+      { text: "Can your dispatch reporting connect to our existing inventory system?", audio: "assets/qa/nova-q2.m4a" },
     ],
-    helix: [{ text: "Do you help with incentive and rebate paperwork for solar projects?" }],
-    lumen: [{ text: "How long does a typical dashboard project take?", answer: "Most first versions take four to six weeks, depending on the data sources." }],
+    helix: [{ text: "Do you help with incentive and rebate paperwork for solar projects?", audio: "assets/qa/helix-q1.m4a" }],
+    lumen: [{ text: "How long does a typical dashboard project take?", audio: "assets/qa/lumen-q1.m4a", answer: "Most first versions take four to six weeks, depending on the data sources.", answerAudio: "assets/qa/lumen-a1.m4a" }],
   };
+  const MAX_VOICE_SECONDS = 60;
+  const MAX_VOICE_BYTES = 10 * 1024 * 1024;
+  const handState = Object.create(null);
+  const handTimers = Object.create(null);
+  let activeVoice = null;
   let premierePhase = "ready";
   let premiereTimer;
 
@@ -1478,6 +1489,253 @@
     return `Ask before or during the premiere. ${rep} answers live after the video.`;
   }
 
+  function qaAudio(src, label) {
+    const player = element("audio", "qa-audio");
+    player.controls = true;
+    player.preload = "none";
+    player.src = src;
+    player.setAttribute("aria-label", label);
+    return player;
+  }
+
+  function readRecording(id) {
+    return mediaRequest("readonly", (store) => store.get(`qa-recording:${id}`)).then((blob) => (
+      blob instanceof Blob && blob.type.startsWith("audio/") && blob.size <= MAX_VOICE_BYTES ? blob : null
+    ), () => null);
+  }
+
+  function voiceMimeType() {
+    if (typeof MediaRecorder === "undefined") return null;
+    return ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"].find((type) => MediaRecorder.isTypeSupported(type)) || "";
+  }
+
+  function startCaptions(onText) {
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) return null;
+    const recognition = new Recognition();
+    let finalText = "";
+    let latest = "";
+    let active = true;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = navigator.language || "en-US";
+    recognition.onresult = (event) => {
+      let interim = "";
+      for (let index = event.resultIndex; index < event.results.length; index++) {
+        const result = event.results[index];
+        if (result.isFinal) finalText += `${result[0].transcript} `;
+        else interim += result[0].transcript;
+      }
+      latest = cleanMessage(`${finalText}${interim}`);
+      onText(latest);
+    };
+    recognition.onerror = (event) => {
+      if (["not-allowed", "service-not-allowed", "audio-capture", "network"].includes(event.error)) active = false;
+    };
+    recognition.onend = () => {
+      if (!active) return;
+      try { recognition.start(); } catch { active = false; }
+    };
+    try { recognition.start(); } catch { return null; }
+    return { stop: () => { active = false; try { recognition.stop(); } catch { /* already stopped */ } }, text: () => latest };
+  }
+
+  function grantMicLater(profile) {
+    clearTimeout(handTimers[profile.id]);
+    handTimers[profile.id] = setTimeout(() => {
+      if (handState[profile.id] !== "raised") return;
+      if (profile.id === STAGE_COMPANY_ID && premierePhase === "premiere") {
+        grantMicLater(profile);
+        return;
+      }
+      handState[profile.id] = "mic";
+      refreshVoice(profile);
+      announce(`${profile.representative || "The representative"} passed you the mic. Tap Start talking.`);
+    }, 2500);
+  }
+
+  function refreshVoice(profile) {
+    document.querySelectorAll(`[data-qa-voice="${profile.id}"]`).forEach((block) => renderVoice(profile, block, block.closest(".expo-qa")));
+  }
+
+  function renderVoice(profile, block, qaContainer) {
+    block.replaceChildren();
+    const rep = profile.representative || "the representative";
+    const away = presenceOf(profile) === "away";
+    const state = handState[profile.id] || "idle";
+    block.append(element("h5", "qa-voice-title", "Ask out loud"));
+    const status = element("p", "qa-voice-status");
+    status.setAttribute("role", "status");
+    const actions = element("div", "qa-voice-actions");
+    if (activeVoice?.profileId === profile.id) {
+      status.textContent = "You're live. Tap Done talking when you finish.";
+      block.append(status);
+      return;
+    }
+    if (away) {
+      status.textContent = `${rep} is away. Record a voice question and it will be answered on the replay.`;
+      const record = element("button", "button button-primary qa-mic", "Record a voice question");
+      record.type = "button";
+      record.addEventListener("click", () => startTalking(profile, block, qaContainer, false));
+      actions.append(record);
+    } else if (state === "raised") {
+      const waiting = profile.id === STAGE_COMPANY_ID && premierePhase === "premiere";
+      status.textContent = waiting ? `Hand raised. ${rep} will pass you the mic when the premiere ends.` : `Hand raised. You're next in line for ${rep}.`;
+      const lower = element("button", "button button-secondary", "Lower hand");
+      lower.type = "button";
+      lower.addEventListener("click", () => {
+        clearTimeout(handTimers[profile.id]);
+        delete handState[profile.id];
+        renderVoice(profile, block, qaContainer);
+        block.querySelector("button")?.focus();
+      });
+      actions.append(lower);
+    } else if (state === "mic") {
+      status.textContent = `${rep} passed you the mic. Everyone in the room will hear you as you talk.`;
+      const talk = element("button", "button button-primary qa-mic", "Start talking");
+      talk.type = "button";
+      talk.addEventListener("click", () => startTalking(profile, block, qaContainer, true));
+      const pass = element("button", "button button-secondary", "Hand back the mic");
+      pass.type = "button";
+      pass.addEventListener("click", () => {
+        delete handState[profile.id];
+        renderVoice(profile, block, qaContainer);
+        block.querySelector("button")?.focus();
+      });
+      actions.append(talk, pass);
+    } else {
+      status.textContent = `Raise your hand and ${rep} passes you the mic. Your words appear as text while you talk.`;
+      const raise = element("button", "button button-primary qa-raise", "Raise hand to speak");
+      raise.type = "button";
+      raise.addEventListener("click", () => {
+        handState[profile.id] = "raised";
+        grantMicLater(profile);
+        renderVoice(profile, block, qaContainer);
+        block.querySelector("button")?.focus();
+      });
+      actions.append(raise);
+    }
+    block.append(status, actions, element("p", "qa-voice-note", "Preview: your voice is recorded in this browser only. Broadcasting it live to everyone in the room needs a live-audio service, which is planned. Live captions use your browser's speech recognition, which may send audio to the browser maker (for example, Google in Chrome)."));
+  }
+
+  async function startTalking(profile, block, qaContainer, live) {
+    const status = block.querySelector(".qa-voice-status");
+    const mimeType = voiceMimeType();
+    if (mimeType === null || !navigator.mediaDevices?.getUserMedia) {
+      if (status) status.textContent = "This browser can't record audio. Type your question below instead.";
+      return;
+    }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    } catch (error) {
+      if (status) status.textContent = error?.name === "NotAllowedError"
+        ? "Microphone access was blocked. Allow the microphone for this site, or type your question below."
+        : "No microphone was found. Connect one, or type your question below.";
+      return;
+    }
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType, audioBitsPerSecond: 64000 } : undefined);
+    const chunks = [];
+    const started = performance.now();
+    let transcript = "";
+    block.replaceChildren();
+    block.classList.add("is-live");
+    const onAir = element("p", "qa-onair", live ? "On air" : "Recording");
+    const meter = element("div", "qa-meter");
+    const meterFill = element("span", "qa-meter-fill");
+    meter.append(meterFill);
+    meter.setAttribute("aria-hidden", "true");
+    const clock = element("span", "qa-clock", "0:00");
+    const caption = element("p", "qa-live-caption", "Listening…");
+    caption.setAttribute("aria-live", "polite");
+    const done = element("button", "button button-primary qa-done", "Done talking");
+    done.type = "button";
+    const head = element("div", "qa-live-head");
+    head.append(onAir, clock);
+    block.append(head, meter, caption, done);
+    done.focus();
+    const stage = profile.id === STAGE_COMPANY_ID ? document.querySelector(".expo-stage") : null;
+    let banner = null;
+    let bannerCaption = null;
+    if (stage) {
+      banner = element("div", "stage-onair");
+      banner.setAttribute("aria-hidden", "true");
+      bannerCaption = element("p", "stage-onair-caption", "Listening…");
+      banner.append(element("span", "stage-onair-tag", live ? "On air · Audience question" : "Recording · Question for the replay"), bannerCaption);
+      stage.append(banner);
+    }
+    const captions = startCaptions((text) => {
+      transcript = text;
+      caption.textContent = text || "Listening…";
+      if (bannerCaption) bannerCaption.textContent = text || "Listening…";
+    });
+    if (!captions) caption.textContent = "Live captions aren't available in this browser. You can type a summary after you finish.";
+    let audioContext;
+    let frame;
+    try {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 512;
+      audioContext.createMediaStreamSource(stream).connect(analyser);
+      const samples = new Uint8Array(analyser.fftSize);
+      const draw = () => {
+        analyser.getByteTimeDomainData(samples);
+        let sum = 0;
+        for (const sample of samples) sum += ((sample - 128) / 128) ** 2;
+        meterFill.style.width = `${Math.min(100, Math.sqrt(sum / samples.length) * 320)}%`;
+        frame = requestAnimationFrame(draw);
+      };
+      draw();
+    } catch { meter.hidden = true; }
+    const tick = setInterval(() => {
+      const seconds = Math.floor((performance.now() - started) / 1000);
+      clock.textContent = `${formatClock(seconds)} / ${formatClock(MAX_VOICE_SECONDS)}`;
+      if (seconds >= MAX_VOICE_SECONDS) finish();
+    }, 250);
+    recorder.addEventListener("dataavailable", (event) => { if (event.data.size) chunks.push(event.data); });
+    let finished = false;
+    function finish() {
+      if (finished) return;
+      finished = true;
+      activeVoice = null;
+      clearInterval(tick);
+      cancelAnimationFrame(frame);
+      captions?.stop();
+      transcript = captions?.text() || transcript;
+      done.disabled = true;
+      done.textContent = "Saving…";
+      recorder.addEventListener("stop", async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        audioContext?.close().catch(() => {});
+        banner?.remove();
+        block.classList.remove("is-live");
+        const seconds = Math.round((performance.now() - started) / 1000);
+        const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" });
+        const id = `rec-${newProfileId().slice(6).toLowerCase()}`.slice(0, 64);
+        const stored = blob.size && blob.size <= MAX_VOICE_BYTES
+          ? await mediaRequest("readwrite", (store) => store.put(blob, `qa-recording:${id}`)).then(() => true, () => false)
+          : false;
+        const text = cleanMessage(transcript).slice(0, 500) || "Voice question (no captions captured)";
+        if (!questionsByCompany[profile.id]) questionsByCompany[profile.id] = [];
+        questionsByCompany[profile.id].push(stored ? { text, at: new Date().toISOString(), recording: id, seconds } : { text, at: new Date().toISOString() });
+        const persisted = writeStoredValue(QUESTIONS_KEY, questionsByCompany);
+        delete handState[profile.id];
+        renderQA(profile, qaContainer);
+        const nextStatus = qaContainer.querySelector(".qa-voice-status");
+        if (nextStatus) nextStatus.textContent = !stored
+          ? "Your question text was saved, but the recording couldn't be stored in this browser."
+          : persisted ? `Your ${live ? "live" : "recorded"} question is in the list with its recording and text. Saved in this browser only.` : "Saved for this visit; browser storage is unavailable.";
+        qaContainer.querySelector(".qa-item:last-child .qa-question")?.setAttribute("tabindex", "-1");
+        qaContainer.querySelector(".qa-item:last-child .qa-question")?.focus();
+      }, { once: true });
+      if (recorder.state !== "inactive") recorder.stop();
+      else recorder.dispatchEvent(new Event("stop"));
+    }
+    done.addEventListener("click", finish);
+    activeVoice = { profileId: profile.id, finish };
+    recorder.start(1000);
+  }
+
   function renderQA(profile, container) {
     container.replaceChildren();
     container.classList.add("expo-qa");
@@ -1486,20 +1744,55 @@
     status.dataset.qaStatus = profile.id;
     status.setAttribute("aria-live", "polite");
     container.append(status);
-    const questions = [...(sampleQuestions[profile.id] || []), ...(questionsByCompany[profile.id] || []).map((entry) => ({ text: entry.text, local: true }))];
+    const rep = profile.representative || "Representative";
+    const questions = [...(sampleQuestions[profile.id] || []), ...(questionsByCompany[profile.id] || []).map((entry) => ({ ...entry, local: true }))];
     if (questions.length) {
       const list = element("ol", "qa-list");
       for (const question of questions) {
         const item = element("li", "qa-item");
-        item.append(element("p", "qa-meta", question.local ? "Your question · Saved in this browser" : "Sample question"), element("p", "qa-question", question.text));
-        if (question.answer) item.append(element("p", "qa-answer", `${profile.representative || "Representative"} · Sample answer: ${question.answer}`));
+        const meta = question.local
+          ? (question.recording ? `Your voice question · ${formatClock(question.seconds || 0)} · Saved in this browser` : "Your question · Saved in this browser")
+          : (question.audio ? "Sample voice question · Synthetic voice" : "Sample question");
+        item.append(element("p", "qa-meta", meta));
+        if (question.audio) item.append(qaAudio(question.audio, `Play sample question: ${question.text}`));
+        if (question.recording) {
+          const slot = element("div", "qa-recording-slot");
+          item.append(slot);
+          readRecording(question.recording).then((blob) => {
+            if (!blob) {
+              slot.append(element("p", "qa-meta", "Recording not available in this browser."));
+              return;
+            }
+            const url = URL.createObjectURL(blob);
+            const player = qaAudio(url, `Play your voice question: ${question.text}`);
+            player.preload = "metadata";
+            player.addEventListener("loadedmetadata", () => {
+              if (player.duration !== Infinity) return;
+              player.addEventListener("durationchange", () => { player.currentTime = 0; }, { once: true });
+              player.currentTime = 1e101;
+            }, { once: true });
+            slot.append(player);
+            window.addEventListener("pagehide", () => URL.revokeObjectURL(url), { once: true });
+          });
+        }
+        item.append(element("p", "qa-question", question.text));
+        if (question.answer) {
+          const answer = element("div", "qa-answer");
+          answer.append(element("p", "", `${rep} · Sample answer${question.answerAudio ? " · Synthetic voice" : ""}: ${question.answer}`));
+          if (question.answerAudio) answer.append(qaAudio(question.answerAudio, `Play ${rep}'s sample answer`));
+          item.append(answer);
+        }
         list.append(item);
       }
       container.append(list);
     } else container.append(element("p", "chat-empty", "No questions yet. Ask the first one."));
+    const voice = element("div", "qa-voice");
+    voice.dataset.qaVoice = profile.id;
+    container.append(voice);
+    renderVoice(profile, voice, container);
     const form = element("form", "chat-form qa-form");
     const inputId = `qa-question-${profile.id}-${++chatSequence}`;
-    const label = element("label", "chat-label", "Your question");
+    const label = element("label", "chat-label", "Or type your question");
     label.htmlFor = inputId;
     const textarea = element("textarea", "chat-input");
     textarea.id = inputId;
@@ -1541,6 +1834,8 @@
       const profile = resolveProfile(node.dataset.qaStatus);
       if (profile) node.textContent = qaStatusText(profile);
     });
+    const stageProfile = resolveProfile(STAGE_COMPANY_ID);
+    if (stageProfile && handState[stageProfile.id] === "raised") refreshVoice(stageProfile);
   }
 
   function showStageCompany(tab) {
@@ -1553,6 +1848,95 @@
       button.classList.toggle("active", active);
       button.setAttribute("aria-pressed", String(active));
     });
+  }
+
+  function stagePanelState() {
+    const layout = document.querySelector(".expo-layout");
+    const sidebar = document.getElementById("expo-sidebar");
+    if (!layout || !sidebar) return null;
+    const theater = layout.classList.contains("is-theater");
+    return { layout, sidebar, theater, open: !theater || layout.classList.contains("is-panel-open") };
+  }
+
+  function syncStagePanel() {
+    const state = stagePanelState();
+    if (!state) return;
+    state.sidebar.inert = !state.open;
+    const button = document.getElementById("stage-company");
+    button?.setAttribute("aria-expanded", String(state.open));
+    const hint = button?.querySelector(".stage-company-hint");
+    if (hint) hint.textContent = state.theater && state.open ? "Panel open · Video keeps playing" : "Tap for profile, services, and chat";
+  }
+
+  function setTheater(on) {
+    const state = stagePanelState();
+    if (!state) return;
+    state.layout.classList.toggle("is-theater", on);
+    state.layout.classList.remove("is-panel-open");
+    syncStagePanel();
+  }
+
+  function openStagePanel(focus = true) {
+    const state = stagePanelState();
+    if (!state) return;
+    if (state.theater) {
+      state.layout.classList.add("is-panel-open");
+      state.sidebar.scrollTop = 0;
+      if (window.matchMedia("(max-width: 760px)").matches) {
+        document.querySelector(".expo-stage")?.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+      }
+    }
+    syncStagePanel();
+    if (focus) state.sidebar.querySelector(".expo-panel-tab[aria-selected=true]")?.focus({ preventScroll: true });
+  }
+
+  function closeStagePanel() {
+    const state = stagePanelState();
+    if (!state?.theater) return;
+    state.layout.classList.remove("is-panel-open");
+    syncStagePanel();
+    document.getElementById("stage-company")?.focus({ preventScroll: true });
+  }
+
+  function setupStageCompany() {
+    const state = stagePanelState();
+    const bottom = document.querySelector(".expo-stage .stage-bottom");
+    const profile = resolveProfile(STAGE_COMPANY_ID);
+    if (!state || !bottom || !profile) return;
+    const button = element("button", "stage-company");
+    button.type = "button";
+    button.id = "stage-company";
+    button.setAttribute("aria-controls", "expo-sidebar");
+    button.setAttribute("aria-label", `${profile.name}: open profile, services, and chat beside the video`);
+    const avatar = element("span", "stage-avatar");
+    avatar.classList.toggle("has-uploaded-logo", Boolean(profile.logo));
+    avatar.append(companyLogo(profile));
+    const text = element("span", "stage-company-text");
+    text.append(element("strong", "", profile.name), element("span", "stage-company-hint", ""));
+    button.append(avatar, text);
+    button.addEventListener("click", () => {
+      const current = stagePanelState();
+      if (current?.theater && current.open && currentExpoProfile?.id === profile.id) {
+        closeStagePanel();
+        return;
+      }
+      showStageCompany("profile");
+      openStagePanel();
+    });
+    const note = bottom.querySelector(".stage-preview-note");
+    bottom.replaceChildren(button);
+    if (note) bottom.append(note);
+    const close = element("button", "expo-panel-close", "Back to the video");
+    close.type = "button";
+    close.addEventListener("click", closeStagePanel);
+    state.sidebar.prepend(close);
+    state.sidebar.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && stagePanelState()?.theater) {
+        event.stopPropagation();
+        closeStagePanel();
+      }
+    });
+    syncStagePanel();
   }
 
   function runPremiere() {
@@ -1586,6 +1970,7 @@
     bar.focus();
     setPremierePhase("premiere");
     showStageCompany("qa");
+    setTheater(true);
     const started = performance.now();
     const tick = () => {
       const progress = Math.min(1, (performance.now() - started) / PREMIERE_DEMO_MS);
@@ -1615,6 +2000,8 @@
     if (copy) copy.textContent = `Ask ${profile?.representative || "the representative"} a question beside the stage · Replay the premiere preview`;
     center.querySelector("#expo-preview")?.setAttribute("aria-label", "Replay the premiere preview");
     setPremierePhase("qa");
+    if (!activeVoice) showStageCompany("qa");
+    setTheater(false);
     center.querySelector("#expo-preview")?.focus();
     announce("The premiere ended. Live Q&A is open.");
   }
@@ -2063,10 +2450,12 @@
           tab.setAttribute(tab.getAttribute("role") === "tab" ? "aria-selected" : "aria-pressed", String(active));
         }
         renderExpoPanel(profile);
+        if (stagePanelState()?.theater) openStagePanel(false);
       });
     });
     const firstExpoProfile = expoButtons.length ? resolveProfile(expoButtons[0].dataset.expoCompany || expoButtons[0].dataset.company) : sampleProfiles[0];
     if (firstExpoProfile) renderExpoPanel(firstExpoProfile);
+    setupStageCompany();
     document.getElementById("expo-preview")?.addEventListener("click", runPremiere);
     document.getElementById("spotlight-info")?.addEventListener("click", (event) => showSpotlight(event.currentTarget));
     document.querySelectorAll("[data-replay], button#expo-replay").forEach((button) => {

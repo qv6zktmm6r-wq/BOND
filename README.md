@@ -28,7 +28,9 @@ Open http://localhost:3000. The site is plain HTML, CSS, and JavaScript; it need
 - `dist/app.js` — shared interactions, demo profiles, filters, and browser-local behavior.
 - `dist/*.css` — styles; `dist/homepage.css` holds the homepage discovery section (search, industry strip, featured businesses, next-expo preview); `dist/expo-floor.css` holds the Live Expos booth floor; `dist/spotlight.css` holds the Spotlight premiere timeline and Live Q&A panel; `dist/matches.css` holds business matchmaking (homepage try-it, suggested matches on profiles, post-signup matches); `dist/profiles.css` holds the company profile page, including the contact bar, section navigation, intro video, certifications, and projects.
 - `dist/assets/` — BOND logos and photography, including the `industry-*.jpg` tiles and the `project-*.jpg` sample portfolio photos.
+- `dist/assets/qa/` — synthetic sample voice clips for the Live Q&A tab (see `ASSET_NOTES.md`).
 - Uploaded intro videos and project photos are stored in the visitor's browser (IndexedDB database `bond-demo-media`); profile text stays in `localStorage`.
+- Voice Q&A: a visitor raises a hand, the representative passes the mic (simulated after a short delay in the preview), and the visitor talks with live captions and an on-air banner on the stage. The recording is saved in the same IndexedDB database (`qa-recording:<id>`), and its caption text is stored with the question in `localStorage`. Broadcasting to everyone in the room live requires a live-audio service that has not been chosen yet.
 - `vercel.json` — Vercel hosting: serves `dist/` as-is, no build step.
 - `ASSET_NOTES.md` — photography provenance and user-selected imagery.
 - `docs/original-site-text-snapshot.txt` — earlier content reference.

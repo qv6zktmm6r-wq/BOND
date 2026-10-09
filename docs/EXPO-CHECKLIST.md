@@ -61,7 +61,11 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 - [x] Five-minute presentation format: recorded Spotlight premieres on the main stage, or the company presents live
 - [x] Live Q&A after the premiere (demo)
 - [x] Side panel with profile, services, and direct chat beside the stage
-- [ ] Click the company logo on the video to open the side panel without leaving the video
+- [x] Click the company logo on the video to open the side panel without leaving the video (the video widens during the premiere and keeps playing while the panel is open)
+- [x] Voice Q&A: raise hand, the representative passes the mic, talk with live captions and an on-air banner on the stage; the recording and text are saved to the Q&A list for replay (in this browser)
+- [x] Away representatives: record a voice question to be answered on the replay
+- [!] Everyone in the room hears the speaker live (needs a live-audio service; owner approval of provider and cost)
+- [ ] Representative-side controls to see raised hands and pass or take back the mic (comes with the live-audio service)
 - [ ] Real video playback and live streaming (needs video hosting)
 
 ## 5. Opportunity Board

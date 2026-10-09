@@ -58,3 +58,11 @@ Assets: `dist/assets/project-fieldstone.jpg`, `project-nova.jpg`, `project-helix
 Generated with Cursor's built-in image generation on October 9, 2026, then resized to 800 × 600 JPEG. One finished-work photo per sample company: an office building, a distribution yard, a rooftop solar array, an operations dashboard wall, a satellite integration lab, a truss bridge, machined brackets, and a planning workshop. Navy/cobalt palette, no readable text or logos. Illustrative only; the profile page labels them "Sample project · Illustrative photo."
 
 Placement: the Projects gallery on each sample company profile, and the backdrop of the 30-second introduction video placeholder.
+
+## Sample Q&A voice clips
+
+Assets: `dist/assets/qa/nova-q1.m4a`, `nova-a1.m4a`, `nova-q2.m4a`, `helix-q1.m4a`, `lumen-q1.m4a`, `lumen-a1.m4a`
+
+Synthesized locally on October 9, 2026 with the macOS `say` command (system voices Reed, Samantha, Rishi, Moira, Daniel, and Flo). No paid service was used. These are not real people or real BOND members, and the Live Q&A panel labels each clip as a "Synthetic voice."
+
+Placement: the sample voice questions and answers in the Live Q&A tab on Home and Live Expos.
