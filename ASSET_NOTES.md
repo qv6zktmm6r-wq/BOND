@@ -50,3 +50,11 @@ Assets: `dist/assets/industry-aerospace.jpg`, `industry-engineering.jpg`, `indus
 Generated with Cursor's built-in image generation on October 9, 2026, at the owner's request, then resized to 800 × 600 JPEG. Each shows two business people from different backgrounds working in that industry, in BOND's navy/cobalt palette, with no text or logos. The people and scenes are illustrative, not real BOND customers.
 
 Placement: Home-page industry strip and featured-business covers. Professional services reuses `collaboration.png`.
+
+## Sample project photography
+
+Assets: `dist/assets/project-fieldstone.jpg`, `project-nova.jpg`, `project-helix.jpg`, `project-lumen.jpg`, `project-aero.jpg`, `project-vector.jpg`, `project-forge.jpg`, `project-creston.jpg`
+
+Generated with Cursor's built-in image generation on October 9, 2026, then resized to 800 × 600 JPEG. One finished-work photo per sample company: an office building, a distribution yard, a rooftop solar array, an operations dashboard wall, a satellite integration lab, a truss bridge, machined brackets, and a planning workshop. Navy/cobalt palette, no readable text or logos. Illustrative only; the profile page labels them "Sample project · Illustrative photo."
+
+Placement: the Projects gallery on each sample company profile, and the backdrop of the 30-second introduction video placeholder.

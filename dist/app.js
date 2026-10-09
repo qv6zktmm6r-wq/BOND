@@ -10,6 +10,11 @@
   const MAX_UPLOAD_BYTES = 1024 * 1024;
   const MAX_IMAGE_DATA_URL_LENGTH = 1.5 * 1024 * 1024;
   const MAX_PROFILE_STORAGE_LENGTH = 6 * 1024 * 1024;
+  const MEDIA_DB_NAME = "bond-demo-media";
+  const VIDEO_TYPES = ["video/mp4", "video/webm", "video/quicktime"];
+  const MAX_VIDEO_BYTES = 30 * 1024 * 1024;
+  const MAX_VIDEO_SECONDS = 30;
+  const MAX_PROJECT_PHOTOS = 3;
   const categories = ["Aerospace & Defense", "Construction", "Engineering", "Manufacturing", "Technology", "Logistics", "Energy", "Professional services", "Other industry"];
   const ownershipOptions = ["Veteran-owned", "Woman-owned", "Small business"];
   const sampleProfiles = [
@@ -118,6 +123,46 @@
       ownership: "Small business",
     },
   ];
+
+  const sampleShowcase = {
+    nova: {
+      certifications: ["DOT-registered motor carrier", "Hazardous materials handling training"],
+      projects: [["Regional distribution launch", "Dock scheduling and same-day routes for a growing retailer.", "assets/project-nova.jpg"], ["Job-site delivery program", "Material deliveries coordinated across multi-site builds.", "assets/industry-logistics.jpg"]],
+    },
+    helix: {
+      certifications: ["NABCEP PV installation professional", "LEED Green Associate"],
+      projects: [["Warehouse rooftop solar", "Planning and installation oversight for a commercial rooftop array.", "assets/project-helix.jpg"], ["Facility efficiency review", "Energy use assessment with a phased upgrade plan.", "assets/industry-energy.jpg"]],
+    },
+    creston: {
+      certifications: ["PMP-certified program managers", "Lean Six Sigma Green Belt"],
+      projects: [["Program kickoff workshop", "Turned a multi-team plan into a shared delivery timeline.", "assets/project-creston.jpg"], ["Operations process redesign", "Mapped and simplified a client's order-to-delivery process.", "assets/collaboration.png"]],
+    },
+    lumen: {
+      certifications: ["SOC 2 Type II (in progress)", "AWS Partner"],
+      projects: [["Fleet operations dashboard", "Live map and reporting wall for a dispatch team.", "assets/project-lumen.jpg"], ["Workflow automation rollout", "Replaced spreadsheet handoffs with an approval workflow.", "assets/industry-software.jpg"]],
+    },
+    aero: {
+      certifications: ["AS9100 quality management", "ITAR registration"],
+      projects: [["Satellite subassembly integration", "Harness routing and connector integration on a test stand.", "assets/project-aero.jpg"], ["Hangar test support", "Engineering support during ground testing.", "assets/industry-aerospace.jpg"]],
+    },
+    fieldstone: {
+      certifications: ["California general contractor license (Class B)", "OSHA 30 construction safety"],
+      projects: [["Two-story office building", "Ground-up commercial build with a glass storefront.", "assets/project-fieldstone.jpg"], ["Site planning and coordination", "Phased site work coordinated with engineering partners.", "assets/industry-construction.jpg"]],
+    },
+    vector: {
+      certifications: ["Licensed Professional Engineers (PE) on staff", "ISO 9001 quality management"],
+      projects: [["Pedestrian truss bridge", "Structural design support for a park crossing.", "assets/project-vector.jpg"], ["Design review program", "Technical consulting across a multi-phase build.", "assets/industry-engineering.jpg"]],
+    },
+    forge: {
+      certifications: ["ISO 9001 quality management", "AS9100 (in progress)"],
+      projects: [["Precision bracket run", "CNC-machined aluminum brackets from prototype to production.", "assets/project-forge.jpg"], ["Prototype fabrication", "Short-run prototypes for design validation.", "assets/industry-manufacturing.jpg"]],
+    },
+  };
+  for (const profile of sampleProfiles) {
+    const showcase = sampleShowcase[profile.id];
+    profile.certifications = showcase ? showcase.certifications : [];
+    profile.projects = showcase ? showcase.projects.map(([title, summary, image]) => ({ title, summary, image })) : [];
+  }
 
   const sampleOpportunities = [
     {
@@ -237,18 +282,31 @@
     return `${phone.startsWith("+") ? "+" : ""}${digits}`;
   }
 
-  function parseServices(value) {
-    const entries = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
-    const services = [];
+  function parseList(value, limit, maxLength, separator = ",") {
+    const entries = Array.isArray(value) ? value : typeof value === "string" ? value.split(separator) : [];
+    const items = [];
     const seen = new Set();
     for (const entry of entries) {
-      const service = cleanText(entry, 60);
-      if (!service || seen.has(service.toLocaleLowerCase())) continue;
-      seen.add(service.toLocaleLowerCase());
-      services.push(service);
-      if (services.length === 6) break;
+      const item = cleanText(entry, maxLength);
+      if (!item || seen.has(item.toLocaleLowerCase())) continue;
+      seen.add(item.toLocaleLowerCase());
+      items.push(item);
+      if (items.length === limit) break;
     }
-    return services;
+    return items;
+  }
+
+  function parseServices(value) {
+    return parseList(value, 6, 60);
+  }
+
+  function parseCertifications(value) {
+    return parseList(value, 6, 80);
+  }
+
+  function parseProjects(value) {
+    const titles = Array.isArray(value) ? value.map((project) => typeof project === "string" ? project : project?.title) : value;
+    return parseList(titles, 3, 100, "\n").map((title) => ({ title, summary: "", image: "" }));
   }
 
   function normalizeImageDataUrl(value) {
@@ -287,6 +345,63 @@
       };
       reader.readAsDataURL(file);
     });
+  }
+
+  function readVideoFile(file) {
+    if (!file) return Promise.resolve(null);
+    if (!VIDEO_TYPES.includes(file.type)) return Promise.reject(new Error("Choose an MP4, WebM, or MOV video."));
+    if (!file.size || file.size > MAX_VIDEO_BYTES) return Promise.reject(new Error("Choose a video no larger than 30 MB."));
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const video = document.createElement("video");
+      const finish = (callback) => {
+        video.onloadedmetadata = null;
+        video.onerror = null;
+        URL.revokeObjectURL(url);
+        callback();
+      };
+      video.preload = "metadata";
+      video.muted = true;
+      video.onloadedmetadata = () => {
+        const { duration, videoWidth } = video;
+        if (!videoWidth) finish(() => reject(new Error("This file has no picture. Choose a video file.")));
+        else if (!Number.isFinite(duration) || duration > MAX_VIDEO_SECONDS + 0.5) finish(() => reject(new Error("Keep your introduction video to 30 seconds or less.")));
+        else finish(() => resolve({ blob: file, seconds: duration }));
+      };
+      video.onerror = () => finish(() => reject(new Error("This video could not be played in this browser. Try an MP4 file.")));
+      video.src = url;
+    });
+  }
+
+  function mediaRequest(mode, action) {
+    return new Promise((resolve, reject) => {
+      if (typeof indexedDB === "undefined") {
+        reject(new Error("Browser media storage is unavailable."));
+        return;
+      }
+      const open = indexedDB.open(MEDIA_DB_NAME, 1);
+      open.onupgradeneeded = () => open.result.createObjectStore("media");
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => {
+        const db = open.result;
+        const transaction = db.transaction("media", mode);
+        const request = action(transaction.objectStore("media"));
+        transaction.oncomplete = () => { db.close(); resolve(request.result); };
+        transaction.onerror = transaction.onabort = () => { db.close(); reject(transaction.error); };
+      };
+    });
+  }
+
+  function saveProfileMedia(id, media) {
+    return mediaRequest("readwrite", (store) => store.put(media, id));
+  }
+
+  async function readProfileMedia(profile) {
+    if (!profile.local) return { video: null, photos: [] };
+    const stored = await mediaRequest("readonly", (store) => store.get(profile.id)).catch(() => null);
+    const video = stored?.video instanceof Blob && VIDEO_TYPES.includes(stored.video.type) && stored.video.size <= MAX_VIDEO_BYTES ? stored.video : null;
+    const photos = Array.isArray(stored?.photos) ? stored.photos.map(normalizeImageDataUrl).filter(Boolean).slice(0, MAX_PROJECT_PHOTOS) : [];
+    return { video, photos };
   }
 
   function companyLogo(profile, className = "company-logo-image") {
@@ -335,6 +450,7 @@
           id, name, category, location, description, representative,
           representativeRole: "Company representative", ownership, local: true,
           tagline: cleanText(profile.tagline, 100), services: parseServices(profile.services),
+          certifications: parseCertifications(profile.certifications), projects: parseProjects(profile.projects),
           story: cleanText(profile.story, 1200),
           serviceArea: cleanText(profile.serviceArea, 150), website: normalizeWebsite(profile.website),
           logo: normalizeImageDataUrl(profile.logo), cover: normalizeImageDataUrl(profile.cover),
@@ -359,6 +475,8 @@
       tagline: profile.tagline || "",
       story: profile.story || "",
       services: profile.services,
+      certifications: profile.certifications || [],
+      projects: (profile.projects || []).map((project) => project.title),
       serviceArea: profile.serviceArea || "",
       website: profile.website || "",
       logo: profile.logo || "",
@@ -487,7 +605,7 @@
       const matchesCategory = currentFilter === "All" || profile.category === currentFilter;
       const matchesLocation = locationFilter === "All" || profile.location.toLocaleLowerCase().includes(locationFilter.toLocaleLowerCase());
       const matchesOwnership = ownershipFilter === "All" || profile.ownership === ownershipFilter;
-      const searchText = [profile.name, profile.category, profile.location, profile.description, profile.tagline || "", profile.serviceArea || "", profile.story || "", profile.representative || "", profile.ownership || "", ...profile.services].join(" ").toLocaleLowerCase();
+      const searchText = [profile.name, profile.category, profile.location, profile.description, profile.tagline || "", profile.serviceArea || "", profile.story || "", profile.representative || "", profile.ownership || "", ...profile.services, ...(profile.certifications || [])].join(" ").toLocaleLowerCase();
       return matchesCategory && matchesLocation && matchesOwnership && (!query || searchText.includes(query));
     });
     const content = document.createDocumentFragment();
@@ -934,6 +1052,11 @@
     if (profile.services.length) {
       container.append(element("h4", "detail-label", "Capabilities"), serviceTags(profile));
     }
+    if (profile.certifications?.length) {
+      const certifications = element("div", "company-services");
+      for (const name of profile.certifications) certifications.append(element("span", "service-tag", name));
+      container.append(element("h4", "detail-label", profile.local ? "Certifications · Self-reported" : "Certifications · Sample, not verified"), certifications);
+    }
     if (profile.story) {
       const story = element("section", "company-story");
       story.append(element("h4", "detail-label", profile.local ? "Company story · Local preview" : "Company story · Sample"));
@@ -1031,17 +1154,41 @@
     identity.append(brandLogo, identityCopy);
     const layout = element("div", "profile-main-layout");
     const content = element("div", "profile-content");
-    const section = (title, copy) => {
+    const sectionNav = element("nav", "profile-section-nav");
+    sectionNav.setAttribute("aria-label", "Profile sections");
+    const section = (title, copy, id, navLabel) => {
       const block = element("section", "profile-section");
-      block.append(element("h2", "", title));
+      const heading = element("h2", "", title);
+      if (id) {
+        block.id = id;
+        heading.id = `${id}-heading`;
+        block.setAttribute("aria-labelledby", heading.id);
+        const link = element("a", "", navLabel || title);
+        link.href = `#${id}`;
+        sectionNav.append(link);
+      }
+      block.append(heading);
       if (copy) block.append(element("p", "dialog-copy", copy));
       content.append(block);
       return block;
     };
-    section("Company overview", profile.description);
-    const services = section("Services & capabilities", profile.services.length ? "" : "Services have not been added to this preview yet.");
-    if (profile.services.length) services.append(serviceTags(profile));
-    const story = section("Company story", profile.story || "Company history has not been added to this local preview.");
+    const side = element("aside", "profile-side");
+    section("Company overview", profile.description, "overview", "Overview");
+    const intro = section("30-second introduction", "", "intro-video", "Video");
+    renderIntroVideo(profile, intro);
+    const services = section("Services & capabilities", profile.services.length ? "" : "Services have not been added to this preview yet.", "services", "Services");
+    if (profile.services.length) {
+      const grid = element("ul", "service-grid");
+      profile.services.forEach((service, index) => {
+        const item = element("li", "service-card");
+        item.append(element("span", "service-number", String(index + 1).padStart(2, "0")), element("span", "", service));
+        grid.append(item);
+      });
+      services.append(grid);
+    }
+    renderCertifications(profile, section("Certifications & licenses", "", "certifications", "Certifications"));
+    renderPortfolio(profile, section("Projects", "", "portfolio", "Projects"));
+    const story = section("Company story", profile.story || "Company history has not been added to this local preview.", "story", "Story");
     if (profile.founded) story.append(element("p", "company-founded", `Founded ${profile.founded} · Demo company history`));
     const representative = section("Company representative", "Representative identity and authorization are illustrated as a demo role here.");
     representative.append(element("p", "representative-name", profile.representative || "Representative not added"));
@@ -1057,23 +1204,177 @@
       card.append(button);
       opportunitySection.append(card);
     }
-    const matches = section("Suggested matches", "Customers, partners, suppliers, and teaming partners this company could work with.");
+    const matches = section("Suggested matches", "Customers, partners, suppliers, and teaming partners this company could work with.", "matches", "Matches");
     renderMatchList(profile, matches, { limit: 6 });
     const spotlight = section("Business Spotlight", "A five-minute Spotlight, recorded by the company in its own space or presented live, premieres on the main stage and is followed by live Q&A. The recording stays on this profile as a replay. This preview shows the replay format as text.");
     const replay = element("button", "button button-secondary", "Explore replay format");
     replay.type = "button";
     replay.addEventListener("click", () => showReplay(profile, replay));
     spotlight.append(replay);
-    const side = element("aside", "profile-side");
     const contact = element("section", "profile-contact");
+    contact.id = "contact";
     contact.append(element("h2", "", "Connect with this company"));
     renderProfileContact(profile, contact);
-    if (ownership) contact.append(element("p", "ownership-note", "Ownership is self-reported in this preview. Certification status is not provided."));
+    if (ownership) contact.append(element("p", "ownership-note", "Ownership is self-reported in this preview. VOSB and SDVOSB certification are not asserted."));
     const actions = element("div", "profile-page-actions");
     profileActions(profile, actions);
     side.append(contact, actions);
     layout.append(content, side);
-    container.append(cover, identity, layout);
+    const contactLink = element("a", "", "Contact");
+    contactLink.href = "#contact";
+    sectionNav.append(contactLink);
+    container.append(cover, identity, profileHeroActions(profile, side), sectionNav, layout);
+  }
+
+  function profileHeroActions(profile, side) {
+    const bar = element("div", "profile-hero-actions");
+    const contact = element("button", "button button-primary", "Contact company");
+    contact.type = "button";
+    contact.addEventListener("click", () => {
+      const connect = side.querySelector(".company-connect");
+      connect?.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+      connect?.click();
+    });
+    bar.append(contact);
+    const website = normalizeWebsite(profile.website);
+    if (website) {
+      const link = element("a", "button button-secondary", "Visit website");
+      link.href = website;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      bar.append(link);
+    }
+    const watch = element("a", "button button-secondary", "Watch introduction");
+    watch.href = "#intro-video";
+    const share = element("button", "button button-secondary", "Share profile");
+    share.type = "button";
+    const status = element("p", "profile-share-status");
+    status.setAttribute("role", "status");
+    share.addEventListener("click", async () => {
+      const url = new URL(`company.html?id=${encodeURIComponent(profile.id)}`, window.location.href).href;
+      const localNote = profile.local ? " This local preview opens only in this browser." : "";
+      try {
+        await navigator.clipboard.writeText(url);
+        status.textContent = `Profile link copied.${localNote}`;
+      } catch {
+        status.textContent = `Copy this profile link: ${url}${localNote}`;
+      }
+    });
+    bar.append(watch, share, status);
+    return bar;
+  }
+
+  function renderIntroVideo(profile, container) {
+    const frame = element("div", "intro-video");
+    const poster = element("div", "intro-poster");
+    const copy = element("div", "intro-copy");
+    copy.append(element("strong", "", profile.name), element("span", "", profile.tagline || profile.category));
+    const play = element("button", "intro-play", "Play introduction");
+    play.type = "button";
+    play.setAttribute("aria-label", `Play the ${profile.name} introduction`);
+    poster.append(copy, play, element("span", "intro-length", "0:30"));
+    const still = profile.cover || profile.projects?.find((project) => project.image)?.image || industryImages[profile.category];
+    if (still) {
+      const backdrop = element("img", "intro-backdrop");
+      backdrop.src = still;
+      backdrop.alt = "";
+      backdrop.addEventListener("error", () => backdrop.remove(), { once: true });
+      frame.append(backdrop);
+    }
+    frame.append(poster);
+    const note = element("p", "intro-note");
+    note.setAttribute("role", "status");
+    container.append(frame, note);
+    const sampleNote = profile.local
+      ? "No introduction video yet. Add one when you create a profile draft; it stays in this browser."
+      : "Sample profile: no video is uploaded. Companies add a 30-second introduction here. Video hosting is planned for launch.";
+    play.addEventListener("click", () => { note.textContent = sampleNote; });
+    readProfileMedia(profile).then(({ video }) => {
+      if (!video) return;
+      const url = URL.createObjectURL(video);
+      const player = element("video", "intro-player");
+      player.controls = true;
+      player.playsInline = true;
+      player.preload = "metadata";
+      player.src = url;
+      player.setAttribute("aria-label", `${profile.name} introduction video`);
+      frame.replaceChildren(player);
+      note.textContent = "Your introduction video · Stored in this browser only.";
+      window.addEventListener("pagehide", () => URL.revokeObjectURL(url), { once: true });
+    });
+  }
+
+  function renderCertifications(profile, container) {
+    const certifications = profile.certifications || [];
+    if (!certifications.length) {
+      container.append(element("p", "dialog-copy", "No certifications or licenses added yet."));
+      return;
+    }
+    const list = element("ul", "cert-list");
+    for (const name of certifications) {
+      const item = element("li", "cert-item");
+      item.append(element("span", "cert-name", name), element("span", "cert-badge", profile.local ? "Self-reported" : "Sample · Not verified"));
+      list.append(item);
+    }
+    container.append(list, element("p", "ownership-note", "BOND will check licenses and certifications before showing a Verified badge. Verification is planned for launch."));
+  }
+
+  function renderPortfolio(profile, container) {
+    const grid = element("div", "portfolio-grid");
+    const empty = element("p", "dialog-copy", "No projects added yet.");
+    const fill = (projects) => {
+      grid.replaceChildren();
+      for (const project of projects) {
+        const card = element("figure", "portfolio-card");
+        if (project.image) {
+          const open = element("button", "portfolio-photo");
+          open.type = "button";
+          open.setAttribute("aria-label", `Enlarge photo: ${project.title}`);
+          const image = element("img");
+          image.src = project.image;
+          image.alt = "";
+          image.loading = "lazy";
+          image.decoding = "async";
+          open.append(image);
+          open.addEventListener("click", () => openPhoto(project, profile, open));
+          card.append(open);
+        } else card.classList.add("no-photo");
+        const caption = element("figcaption");
+        caption.append(element("h3", "", project.title));
+        if (project.summary) caption.append(element("p", "", project.summary));
+        caption.append(element("span", "portfolio-label", profile.local ? "Your project · Local preview" : "Sample project · Illustrative photo"));
+        card.append(caption);
+        grid.append(card);
+      }
+      empty.hidden = projects.length > 0;
+    };
+    container.append(grid, empty);
+    fill(profile.projects || []);
+    if (!profile.local) return;
+    readProfileMedia(profile).then(({ photos }) => {
+      if (!photos.length) return;
+      const titles = (profile.projects || []).map((project) => project.title);
+      const count = Math.max(photos.length, titles.length);
+      fill(Array.from({ length: count }, (_, index) => ({ title: titles[index] || `Project photo ${index + 1}`, summary: "", image: photos[index] || "" })));
+    });
+  }
+
+  function openPhoto(project, profile, opener) {
+    const dialog = document.getElementById("company-dialog");
+    const body = document.getElementById("company-dialog-body");
+    if (!dialog || !body) return;
+    body.replaceChildren();
+    body.append(element("p", "dialog-kicker", `${profile.name} · Projects`));
+    const title = element("h2", "dialog-heading", project.title);
+    title.id = "company-dialog-title";
+    dialog.setAttribute("aria-labelledby", title.id);
+    const image = element("img", "portfolio-full");
+    image.src = project.image;
+    image.alt = project.summary || project.title;
+    body.append(title, image);
+    if (project.summary) body.append(element("p", "dialog-copy", project.summary));
+    body.append(element("p", "ownership-note", profile.local ? "Uploaded to this browser only." : "Illustrative photo for a sample company."));
+    showDialog(dialog, opener);
   }
 
   function openCompany(profile, opener) {
@@ -1577,6 +1878,89 @@
     };
   }
 
+  function configureShowcaseUploads(form) {
+    const videoInput = form.elements.namedItem("video");
+    const photosInput = form.elements.namedItem("photos");
+    const videoStatus = document.getElementById("video-upload-status");
+    const photosPreview = document.getElementById("photos-upload-preview");
+    const videoHelp = videoStatus?.textContent || "";
+    let videoCheck = Promise.resolve(null);
+    let photosCheck = Promise.resolve([]);
+    let videoToken = 0;
+    let photosToken = 0;
+    const fail = (input, message) => {
+      input.setCustomValidity(message);
+      const details = input.closest(".profile-form-details");
+      if (details) details.open = true;
+    };
+    const setVideoStatus = (message, error = false) => {
+      if (!videoStatus) return;
+      videoStatus.textContent = message;
+      videoStatus.classList.toggle("is-error", error);
+    };
+    const checkVideo = () => {
+      if (!videoInput) return;
+      const token = ++videoToken;
+      const file = videoInput.files?.[0] || null;
+      videoInput.setCustomValidity("");
+      setVideoStatus(file ? "Checking video…" : videoHelp);
+      videoCheck = readVideoFile(file).then((result) => {
+        if (token === videoToken && result) setVideoStatus(`Video ready · ${formatClock(Math.round(result.seconds))}. It stays in this browser.`);
+        return result;
+      }, (error) => {
+        if (token === videoToken) {
+          fail(videoInput, error.message);
+          setVideoStatus(error.message, true);
+        }
+        throw error;
+      });
+      videoCheck.catch(() => {});
+    };
+    const checkPhotos = () => {
+      if (!photosInput) return;
+      const token = ++photosToken;
+      const files = [...(photosInput.files || [])];
+      photosInput.setCustomValidity("");
+      photosPreview?.replaceChildren(element("span", "", files.length ? "Loading photos…" : "Up to three photos"));
+      const showError = (message) => {
+        if (token !== photosToken) return;
+        fail(photosInput, message);
+        photosPreview?.replaceChildren(element("span", "", message));
+      };
+      if (files.length > MAX_PROJECT_PHOTOS) {
+        const error = new Error("Choose up to three project photos.");
+        showError(error.message);
+        photosCheck = Promise.reject(error);
+      } else {
+        photosCheck = Promise.all(files.map(readImageFile)).then((photos) => {
+          if (token === photosToken && photos.length) {
+            photosPreview?.replaceChildren(...photos.map((src, index) => {
+              const image = element("img", "upload-preview-image");
+              image.src = src;
+              image.alt = `Project photo ${index + 1} preview`;
+              return image;
+            }));
+          }
+          return photos;
+        }, (error) => {
+          const message = `Project photos: ${error.message}`;
+          showError(message);
+          throw new Error(message);
+        });
+      }
+      photosCheck.catch(() => {});
+    };
+    videoInput?.addEventListener("change", checkVideo);
+    photosInput?.addEventListener("change", checkPhotos);
+    form.addEventListener("reset", () => setTimeout(() => { checkVideo(); checkPhotos(); }));
+    return {
+      prepare: async () => {
+        const [video, photos] = await Promise.all([videoCheck, photosCheck]);
+        return { video: video ? video.blob : null, photos };
+      },
+    };
+  }
+
   function invalidProfileField(form, name, message) {
     const field = form.elements.namedItem(name);
     field?.setCustomValidity(message);
@@ -1700,6 +2084,7 @@
 
     const form = document.getElementById("join-form");
     const uploads = form ? configureProfileUploads(form) : null;
+    const showcase = form ? configureShowcaseUploads(form) : null;
     form?.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (uploads.busy()) return;
@@ -1729,17 +2114,21 @@
       uploads.setSubmitting(true);
       try {
       const images = await uploads.prepare();
+      const media = await showcase.prepare();
       if (submittedVersion !== uploads.version()) return;
       const createdProfile = {
         id: newProfileId(), name, category, location, description, representative,
         representativeRole: "Company representative", ownership, local: true,
         tagline: cleanText(data.get("tagline"), 100), services: parseServices(data.get("services")),
+        certifications: parseCertifications(data.get("certifications")), projects: parseProjects(data.get("projects")),
         story: cleanText(data.get("story"), 1200),
         serviceArea: cleanText(data.get("serviceArea"), 150), website,
         publicEmail, publicPhone, publishContact: data.has("publishContact"), ...images,
       };
       profiles.push(createdProfile);
       const saved = saveLocalProfiles();
+      const hasMedia = Boolean(media.video || media.photos.length);
+      const mediaSaved = saved && hasMedia ? await saveProfileMedia(createdProfile.id, media).then(() => true, () => false) : !hasMedia;
       currentFilter = "All";
       const search = document.getElementById("directory-search");
       if (search) search.value = "";
@@ -1773,6 +2162,7 @@
         }
       }
       const success = document.getElementById("join-success");
+      if (success && !mediaSaved) success.append(element("p", "ownership-note", "Your video and project photos could not be stored in this browser, so they will not appear on the profile."));
       if (success && saved) success.append(fullProfileLink(createdProfile));
       if (success) {
         success.append(element("h3", "detail-label", "Your first matches"));

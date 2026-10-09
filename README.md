@@ -26,11 +26,13 @@ Open http://localhost:3000. The site is plain HTML, CSS, and JavaScript; it need
 - `dist/expos.html` — interactive expo preview.
 - `dist/company.html` — company profile preview.
 - `dist/app.js` — shared interactions, demo profiles, filters, and browser-local behavior.
-- `dist/*.css` — styles; `dist/homepage.css` holds the homepage discovery section (search, industry strip, featured businesses, next-expo preview); `dist/expo-floor.css` holds the Live Expos booth floor; `dist/spotlight.css` holds the Spotlight premiere timeline and Live Q&A panel; `dist/matches.css` holds business matchmaking (homepage try-it, suggested matches on profiles, post-signup matches).
-- `dist/assets/` — BOND logos and photography, including the `industry-*.jpg` tiles.
+- `dist/*.css` — styles; `dist/homepage.css` holds the homepage discovery section (search, industry strip, featured businesses, next-expo preview); `dist/expo-floor.css` holds the Live Expos booth floor; `dist/spotlight.css` holds the Spotlight premiere timeline and Live Q&A panel; `dist/matches.css` holds business matchmaking (homepage try-it, suggested matches on profiles, post-signup matches); `dist/profiles.css` holds the company profile page, including the contact bar, section navigation, intro video, certifications, and projects.
+- `dist/assets/` — BOND logos and photography, including the `industry-*.jpg` tiles and the `project-*.jpg` sample portfolio photos.
+- Uploaded intro videos and project photos are stored in the visitor's browser (IndexedDB database `bond-demo-media`); profile text stays in `localStorage`.
 - `vercel.json` — Vercel hosting: serves `dist/` as-is, no build step.
 - `ASSET_NOTES.md` — photography provenance and user-selected imagery.
 - `docs/original-site-text-snapshot.txt` — earlier content reference.
+- `docs/EXPO-CHECKLIST.md` — the online EXPO roadmap checklist we work through in order.
 
 ## Hosting and current behavior
 
