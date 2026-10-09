@@ -1823,7 +1823,7 @@
     const rep = profile.representative || "the representative";
     const away = presenceOf(profile) === "away";
     const state = handState[profile.id] || "idle";
-    block.append(element("h5", "qa-voice-title", "Ask out loud"));
+    block.append(element("h5", "qa-voice-title", "Ask with your microphone"));
     const status = element("p", "qa-voice-status");
     status.setAttribute("role", "status");
     const actions = element("div", "qa-voice-actions");
@@ -1875,8 +1875,8 @@
       });
       actions.append(talk, pass);
     } else {
-      status.textContent = `Raise your hand and ${rep} passes you the mic. Your words appear as text while you talk.`;
-      const raise = element("button", "button button-primary qa-raise", "Raise hand to speak");
+      status.textContent = `Tap the mic to raise your hand. When ${rep} passes you the mic, everyone hears you and your words appear as text.`;
+      const raise = element("button", "button button-primary qa-mic qa-raise", "Tap the mic to ask");
       raise.type = "button";
       raise.addEventListener("click", async () => {
         handState[profile.id] = "raised";
@@ -2080,6 +2080,8 @@
     container.append(status);
     const rep = profile.representative || "Representative";
     const questions = [...(sampleQuestions[profile.id] || []), ...(questionsByCompany[profile.id] || []).map((entry) => ({ ...entry, local: true }))];
+    const asked = element("div", "qa-asked");
+    asked.append(element("h5", "qa-asked-title", "Questions so far"));
     if (questions.length) {
       const list = element("ol", "qa-list");
       for (const question of questions) {
@@ -2122,8 +2124,8 @@
         }
         list.append(item);
       }
-      container.append(list);
-    } else container.append(element("p", "chat-empty", "No questions yet. Ask the first one."));
+      asked.append(list);
+    } else asked.append(element("p", "chat-empty", "No questions yet. Ask the first one."));
     const voice = element("div", "qa-voice");
     voice.dataset.qaVoice = profile.id;
     container.append(voice);
@@ -2166,7 +2168,7 @@
       if (nextStatus) nextStatus.textContent = persisted ? "Question added. In this preview it is saved only in this browser." : "Question added for this visit; browser storage is unavailable.";
     });
     form.append(label, textarea, submit, formStatus);
-    container.append(form);
+    container.append(form, asked);
   }
 
   function setPremierePhase(phase) {
