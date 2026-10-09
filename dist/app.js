@@ -1817,6 +1817,9 @@
 
   function renderVoice(profile, block, qaContainer) {
     block.replaceChildren();
+    const inLiveRoom = Boolean(liveSession(profile));
+    qaContainer?.classList.toggle("is-live-room", inLiveRoom);
+    if (inLiveRoom) qaContainer?.querySelectorAll(".qa-item .qa-audio").forEach((player) => { if (!player.closest(".qa-recording-slot")) player.pause(); });
     const rep = profile.representative || "the representative";
     const away = presenceOf(profile) === "away";
     const state = handState[profile.id] || "idle";
@@ -2081,10 +2084,11 @@
       const list = element("ol", "qa-list");
       for (const question of questions) {
         const item = element("li", "qa-item");
-        const meta = question.local
+        const meta = element("p", "qa-meta", question.local
           ? (question.recording ? `Your voice question · ${formatClock(question.seconds || 0)} · Saved in this browser` : "Your question · Saved in this browser")
-          : (question.audio ? "Sample voice question · Synthetic voice" : "Sample question");
-        item.append(element("p", "qa-meta", meta));
+          : "Sample question");
+        if (question.audio) meta.append(element("span", "qa-synthetic", " · Synthetic voice"));
+        item.append(meta);
         if (question.audio) item.append(qaAudio(question.audio, `Play sample question: ${question.text}`));
         if (question.recording) {
           const slot = element("div", "qa-recording-slot");
@@ -2109,7 +2113,10 @@
         item.append(element("p", "qa-question", question.text));
         if (question.answer) {
           const answer = element("div", "qa-answer");
-          answer.append(element("p", "", `${rep} · Sample answer${question.answerAudio ? " · Synthetic voice" : ""}: ${question.answer}`));
+          const answerText = element("p", "", `${rep} · Sample answer`);
+          if (question.answerAudio) answerText.append(element("span", "qa-synthetic", " · Synthetic voice"));
+          answerText.append(`: ${question.answer}`);
+          answer.append(answerText);
           if (question.answerAudio) answer.append(qaAudio(question.answerAudio, `Play ${rep}'s sample answer`));
           item.append(answer);
         }
