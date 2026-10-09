@@ -7,6 +7,11 @@
   const MEETINGS_KEY = "bond.demo.meetings";
   const QUESTIONS_KEY = "bond.demo.questions";
   const INTROS_KEY = "bond.demo.intros";
+  const OPPORTUNITIES_KEY = "bond.demo.opportunities";
+  const RESPONSES_KEY = "bond.demo.responses";
+  const FOLLOWS_KEY = "bond.demo.follows";
+  const POSTS_KEY = "bond.demo.posts";
+  const DAY_MS = 24 * 60 * 60 * 1000;
   const MAX_UPLOAD_BYTES = 1024 * 1024;
   const MAX_IMAGE_DATA_URL_LENGTH = 1.5 * 1024 * 1024;
   const MAX_PROFILE_STORAGE_LENGTH = 6 * 1024 * 1024;
@@ -166,27 +171,60 @@
 
   const sampleOpportunities = [
     {
-      id: "nova-dashboard", type: "Service", companyId: "nova",
+      id: "fieldstone-electrical", type: "Service", companyId: "fieldstone", seeking: ["Construction", "Engineering"],
+      title: "Certified electrical subcontractor",
+      summary: "A sample request for a licensed electrical subcontractor on a two-story office build in San Diego.",
+      detail: "This fictional request shows how a general contractor could find certified subcontractors for a commercial build and compare their qualifications.",
+      scope: ["Commercial electrical license", "Tenant improvement experience", "Availability next quarter"],
+    },
+    {
+      id: "forge-shipping", type: "Partner", companyId: "forge", seeking: ["Logistics"],
+      title: "Logistics partner for finished goods",
+      summary: "A sample search for a regional logistics partner to ship finished parts to customers across Southern California.",
+      detail: "This fictional request shows how a manufacturer could look for an ongoing logistics partner instead of booking shipments one at a time.",
+      scope: ["Regional distribution", "Scheduled pickups from the shop floor", "Shipment tracking"],
+    },
+    {
+      id: "creston-website", type: "Service", companyId: "creston", seeking: ["Technology"],
+      title: "Website developer for a client portal",
+      summary: "A sample need for a website developer to build a simple, secure client portal for program updates.",
+      detail: "This fictional request shows how a professional services firm could describe a software project and find technology companies that fit.",
+      scope: ["Client sign-in and document sharing", "Program status pages", "Ongoing maintenance"],
+    },
+    {
+      id: "nova-dashboard", type: "Service", companyId: "nova", seeking: ["Technology"],
       title: "Fleet dashboard support",
       summary: "Explore a sample need for software that brings vehicles, assignments, and reporting into one view.",
       detail: "This fictional opportunity illustrates how a logistics company could describe a software need and discover businesses with relevant capabilities.",
       scope: ["Fleet and assignment overview", "Simple operational reporting", "Workflow planning"],
     },
     {
-      id: "helix-implementation", type: "Partner", companyId: "helix",
+      id: "helix-implementation", type: "Partner", companyId: "helix", seeking: ["Construction", "Engineering"],
       title: "Renewable implementation partner",
       summary: "Discover a sample partnership around planning and implementing renewable energy projects.",
       detail: "This fictional opportunity shows how an energy company could introduce its interests and invite a conversation with potential implementation partners.",
       scope: ["Implementation planning", "Complementary energy capabilities", "An introductory company conversation"],
     },
     {
-      id: "creston-program", type: "Collaboration", companyId: "creston",
+      id: "creston-program", type: "Collaboration", companyId: "creston", seeking: ["Professional services", "Technology"],
       title: "Program delivery collaboration",
       summary: "Explore a sample collaboration between teams with complementary program and operations expertise.",
       detail: "This fictional opportunity demonstrates a company seeking to discuss shared delivery methods and complementary professional services.",
       scope: ["Program coordination", "Operational process design", "Shared capabilities discussion"],
     },
   ];
+  const opportunityTypes = { Partner: "Partnership", Service: "Service need", Collaboration: "Collaboration" };
+  const postTypes = { project: "Project", capability: "New capability", partnership: "Partnership", hiring: "Hiring", event: "Upcoming event" };
+  const samplePosts = [
+    { id: "post-forge-run", companyId: "forge", type: "project", daysAgo: 1, text: "Wrapped a 2,000-piece run of CNC-machined aluminum brackets, from first prototype to production in six weeks." },
+    { id: "post-lumen-hiring", companyId: "lumen", type: "hiring", daysAgo: 2, text: "We're hiring a full-stack engineer to help build dispatch dashboards for logistics teams. California based, remote-friendly." },
+    { id: "post-helix-partner", companyId: "helix", type: "partnership", daysAgo: 3, text: "Now teaming with a regional installer on commercial rooftop solar, so clients get planning and installation under one plan." },
+    { id: "post-vector-capability", companyId: "vector", type: "capability", daysAgo: 4, text: "New: structural design reviews for steel pedestrian bridges, with stamped calculations from our licensed engineers." },
+    { id: "post-nova-event", companyId: "nova", type: "event", daysAgo: 5, text: "Our five-minute Spotlight premieres on the BOND main stage, with live Q&A right after. Bring your routing questions." },
+    { id: "post-fieldstone-project", companyId: "fieldstone", type: "project", daysAgo: 6, text: "Topped out a two-story office building in San Diego. The glass storefront goes in next month." },
+    { id: "post-aero-capability", companyId: "aero", type: "capability", daysAgo: 8, text: "Added harness routing and connector integration support for satellite subassemblies." },
+    { id: "post-creston-event", companyId: "creston", type: "event", daysAgo: 9, text: "Hosting a free workshop on turning a multi-team plan into one delivery timeline. Seats are limited." },
+  ].map((post) => ({ ...post, at: new Date(Date.now() - post.daysAgo * DAY_MS).toISOString() }));
 
   const matchRelations = {
     "Aerospace & Defense": [["Engineering", "Partner", "Design and analysis support for programs"], ["Manufacturing", "Supplier", "Precision parts and prototypes"], ["Technology", "Supplier", "Software and data systems for programs"], ["Logistics", "Supplier", "Parts shipping and distribution"], ["Professional services", "Teaming", "Program management on larger bids"], ["Construction", "Supplier", "Facilities, hangars, and test sites"], ["Energy", "Partner", "Power and efficiency systems"]],
@@ -200,7 +238,7 @@
   };
   const matchTypes = { Customer: "Potential customer", Partner: "Partner", Supplier: "Supplier", Teaming: "Teaming partner" };
   const matchWeights = { Customer: 3, Partner: 3, Supplier: 2, Teaming: 2 };
-  const matchStopwords = new Set(["sample", "company", "companies", "business", "businesses", "service", "services", "support", "focused", "introducing", "capabilities", "capability", "across", "their", "with", "that", "this", "from", "into", "offering", "connecting", "presenting", "showing", "bringing", "everyday", "ideas", "network", "teams", "team", "work", "help", "helping", "movement", "goods", "general"]);
+  const matchStopwords = new Set(["sample", "company", "companies", "business", "businesses", "service", "services", "support", "focused", "introducing", "capabilities", "capability", "across", "their", "with", "that", "this", "from", "into", "offering", "connecting", "presenting", "showing", "bringing", "everyday", "ideas", "network", "teams", "team", "work", "help", "helping", "movement", "goods", "general", "project"]);
 
   const iconPaths = {
     Logistics: ["M4 21V5h11v16", "M15 10h5v11", "M8 9h3M8 13h3M8 17h3M18 14v1M18 18v1M2 21h20"],
@@ -219,8 +257,14 @@
   const messagesByCompany = readSavedMessages();
   const questionsByCompany = readSavedMessages(QUESTIONS_KEY);
   const meetingRequests = readSavedMeetings();
+  const postedOpportunities = readPostedOpportunities();
+  const responsesByOpportunity = readResponses();
+  const followedCompanies = new Set(readStoredIds(FOLLOWS_KEY));
+  const postedUpdates = readPostedUpdates();
   let currentFilter = "All";
   let currentOpportunityFilter = "All";
+  let currentFeedFilter = "All";
+  let feedLimit = 8;
   let currentExpoProfile = sampleProfiles[0];
   let chatSequence = 0;
   let toastTimer;
@@ -557,6 +601,94 @@
       if (knownProfileId(id) && typeof at === "string" && Number.isFinite(Date.parse(at))) result[id] = at;
     }
     return result;
+  }
+
+  function newId(prefix) {
+    const random = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    return `${prefix}-${random}`;
+  }
+
+  function storedTime(value) {
+    const time = typeof value === "string" ? Date.parse(value) : NaN;
+    return Number.isFinite(time) ? new Date(time).toISOString() : "";
+  }
+
+  function readPostedOpportunities() {
+    const stored = readStoredValue(OPPORTUNITIES_KEY);
+    if (!Array.isArray(stored)) return [];
+    return stored.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const title = cleanText(item.title, 100);
+      const summary = cleanText(item.summary, 600);
+      const at = storedTime(item.at);
+      if (typeof item.id !== "string" || !/^opp-[a-z0-9-]{1,60}$/.test(item.id) || !opportunityTypes[item.type]
+        || !knownProfileId(item.companyId) || !title || !summary || !at) return [];
+      return [{
+        id: item.id, type: item.type, companyId: item.companyId, title, summary, detail: summary,
+        scope: parseList(item.scope, 5, 80), seeking: categories.includes(item.seeking) ? [item.seeking] : [],
+        location: cleanText(item.location, 80), at, local: true,
+      }];
+    });
+  }
+
+  function savePostedOpportunities() {
+    return writeStoredValue(OPPORTUNITIES_KEY, postedOpportunities.map((item) => ({
+      id: item.id, type: item.type, companyId: item.companyId, title: item.title, summary: item.summary,
+      scope: item.scope, seeking: item.seeking[0] || "", location: item.location, at: item.at,
+    })));
+  }
+
+  function allOpportunities() {
+    return [...postedOpportunities, ...sampleOpportunities];
+  }
+
+  function readResponses() {
+    const result = Object.create(null);
+    const stored = readStoredValue(RESPONSES_KEY);
+    if (!stored || typeof stored !== "object" || Array.isArray(stored)) return result;
+    const ids = new Set(allOpportunities().map((opportunity) => opportunity.id));
+    for (const [id, entries] of Object.entries(stored)) {
+      if (!ids.has(id) || !Array.isArray(entries)) continue;
+      result[id] = entries.flatMap((entry) => {
+        const at = storedTime(entry?.at);
+        if (!at) return [];
+        return [{ text: cleanMessage(entry.text).slice(0, 800), from: knownProfileId(entry.from) ? entry.from : "", at }];
+      });
+    }
+    return result;
+  }
+
+  function readPostedUpdates() {
+    const stored = readStoredValue(POSTS_KEY);
+    if (!Array.isArray(stored)) return [];
+    return stored.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const text = cleanMessage(item.text).slice(0, 500);
+      const at = storedTime(item.at);
+      if (typeof item.id !== "string" || !/^post-[a-z0-9-]{1,60}$/.test(item.id) || !postTypes[item.type]
+        || !knownProfileId(item.companyId) || !text || !at) return [];
+      return [{ id: item.id, type: item.type, companyId: item.companyId, text, at, local: true }];
+    });
+  }
+
+  function savePostedUpdates() {
+    return writeStoredValue(POSTS_KEY, postedUpdates.map(({ id, type, companyId, text, at }) => ({ id, type, companyId, text, at })));
+  }
+
+  function allPosts() {
+    return [...postedUpdates, ...samplePosts].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  }
+
+  function shortDate(at) {
+    return new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function timeAgo(at) {
+    const days = Math.floor((Date.now() - Date.parse(at)) / DAY_MS);
+    if (days <= 0) return "Today";
+    if (days === 1) return "1 day ago";
+    return days < 30 ? `${days} days ago` : shortDate(at);
   }
 
   function ownershipLabel(profile) {
@@ -951,8 +1083,41 @@
         ? "Demo meeting request saved in this browser. Meeting scheduling will be available when BOND launches."
         : "Demo meeting request saved for this visit. Browser storage is unavailable.";
     });
-    actions.append(connect, save, meeting);
+    actions.append(connect, save);
+    if (!profile.local) actions.append(followButton(profile, "button button-secondary"));
+    actions.append(meeting);
     container.append(actions, status, conversation);
+  }
+
+  function followButton(profile, className) {
+    const button = element("button", `${className} company-follow`);
+    button.type = "button";
+    button.dataset.followCompany = profile.id;
+    button.addEventListener("click", () => toggleFollow(profile));
+    paintFollowButton(button);
+    return button;
+  }
+
+  function paintFollowButton(button) {
+    const following = followedCompanies.has(button.dataset.followCompany);
+    const profile = resolveProfile(button.dataset.followCompany);
+    button.textContent = following ? "Following" : "Follow";
+    button.setAttribute("aria-pressed", String(following));
+    button.setAttribute("aria-label", `${following ? "Following" : "Follow"} ${profile ? profile.name : "company"}`);
+    button.classList.toggle("is-following", following);
+  }
+
+  function toggleFollow(profile) {
+    const following = !followedCompanies.has(profile.id);
+    if (following) followedCompanies.add(profile.id);
+    else followedCompanies.delete(profile.id);
+    const persisted = writeStoredValue(FOLLOWS_KEY, [...followedCompanies]);
+    document.querySelectorAll("[data-follow-company]").forEach(paintFollowButton);
+    if (currentFeedFilter === "Following") renderFeed();
+    else paintFeedFilters();
+    announce(following
+      ? `Following ${profile.name}. Its updates appear under Following${persisted ? "" : " for this visit"}.`
+      : `You unfollowed ${profile.name}.`);
   }
 
   function renderChatThread(profile, thread) {
@@ -1200,17 +1365,8 @@
     const representative = section("Company representative", "Representative identity and authorization are illustrated as a demo role here.");
     representative.append(element("p", "representative-name", profile.representative || "Representative not added"));
     representative.append(element("p", "representative-role", `${profile.representativeRole || "Company representative"} · Demo`));
-    const opportunities = sampleOpportunities.filter((opportunity) => opportunity.companyId === profile.id);
-    const opportunitySection = section("Opportunities", opportunities.length ? "Illustrative opportunities connected to this sample company." : "This preview has no opportunity posts for this company.");
-    for (const opportunity of opportunities) {
-      const card = element("article", "opportunity-card");
-      card.append(element("p", "opportunity-type", `${opportunity.type} · Sample opportunity`), element("h3", "", opportunity.title), element("p", "opportunity-copy", opportunity.summary));
-      const button = element("button", "company-link", "Explore sample opportunity");
-      button.type = "button";
-      button.addEventListener("click", () => openOpportunity(opportunity, button));
-      card.append(button);
-      opportunitySection.append(card);
-    }
+    renderProfileOpportunities(profile, section("Opportunities", "", "opportunities", "Opportunities"));
+    renderCompanyPosts(profile, section("Activity", "", "activity", "Activity"));
     const matches = section("Suggested matches", "Customers, partners, suppliers, and teaming partners this company could work with.", "matches", "Matches");
     renderMatchList(profile, matches, { limit: 6 });
     const spotlight = section("Business Spotlight", "A five-minute Spotlight, recorded by the company in its own space or presented live, premieres on the main stage and is followed by live Q&A. The recording stays on this profile as a replay. This preview shows the replay format as text.");
@@ -2403,34 +2559,98 @@
     announce("The premiere ended. Live Q&A is open.");
   }
 
+  function prepareDialog(kicker, heading) {
+    const dialog = document.getElementById("company-dialog");
+    const body = document.getElementById("company-dialog-body");
+    if (!dialog || !body) return null;
+    body.replaceChildren();
+    const title = element("h2", "dialog-heading", heading);
+    title.id = "company-dialog-title";
+    dialog.setAttribute("aria-labelledby", title.id);
+    body.append(element("p", "dialog-kicker", kicker), title);
+    return { dialog, body };
+  }
+
+  function companyPicker(id, labelText, { includeNone = false, selected = "" } = {}) {
+    const label = element("label", "", labelText);
+    label.htmlFor = id;
+    const select = element("select");
+    select.id = id;
+    select.name = "company";
+    const own = profiles.filter((profile) => profile.local);
+    if (includeNone) select.append(new Option("Just me (no company yet)", ""));
+    if (own.length) {
+      const group = element("optgroup");
+      group.label = "Your companies";
+      own.forEach((profile) => group.append(new Option(profile.name, profile.id)));
+      select.append(group);
+    }
+    const samples = element("optgroup");
+    samples.label = "Sample companies (to try it out)";
+    sampleProfiles.forEach((profile) => samples.append(new Option(profile.name, profile.id)));
+    select.append(samples);
+    if (selected && knownProfileId(selected)) select.value = selected;
+    return { label, select, hasOwn: own.length > 0 };
+  }
+
+  function createProfileHint(body) {
+    const hint = element("p", "form-hint");
+    hint.append("No company profile in this browser yet, so you can post as a sample company. ");
+    const create = element("button", "company-link", "Create your company profile");
+    create.type = "button";
+    create.addEventListener("click", () => {
+      document.getElementById("company-dialog")?.close();
+      openJoin(create);
+    });
+    hint.append(create);
+    body.append(hint);
+  }
+
+  function opportunityLabel(opportunity) {
+    return `${opportunityTypes[opportunity.type]} · ${opportunity.local ? `Posted ${shortDate(opportunity.at)}` : "Sample opportunity"}`;
+  }
+
+  function opportunityCard(opportunity, { thumbnail = true } = {}) {
+    const profile = resolveProfile(opportunity.companyId);
+    const card = element("article", "opportunity-card");
+    const title = element("h3", "", opportunity.title);
+    title.id = `opportunity-${opportunity.id}`;
+    card.setAttribute("aria-labelledby", title.id);
+    if (thumbnail) {
+      const image = element("img", `opportunity-thumbnail opportunity-thumbnail-${opportunity.type.toLowerCase()}`);
+      image.src = opportunity.type === "Partner" ? "assets/networking.png" : "assets/collaboration.png";
+      image.alt = "";
+      image.width = 720;
+      image.height = 480;
+      image.loading = "lazy";
+      image.decoding = "async";
+      card.append(image);
+    }
+    card.append(element("p", "opportunity-type", opportunityLabel(opportunity)));
+    card.append(title, element("p", "opportunity-company", profile ? profile.name : ""));
+    card.append(element("p", "opportunity-copy", opportunity.summary));
+    const responses = responsesByOpportunity[opportunity.id] || [];
+    if (responses.length) {
+      card.append(element("p", "opportunity-flag", opportunity.local
+        ? `${responses.length} ${responses.length === 1 ? "response" : "responses"}`
+        : "You responded"));
+    }
+    const view = element("button", "company-link", "View and respond");
+    view.type = "button";
+    view.setAttribute("aria-label", `View and respond: ${opportunity.title}`);
+    view.addEventListener("click", () => openOpportunity(opportunity, view));
+    card.append(view);
+    return card;
+  }
+
   function renderOpportunities() {
     const grid = document.getElementById("opportunity-grid");
     if (!grid) return;
+    const all = allOpportunities();
+    const visible = all.filter((opportunity) => currentOpportunityFilter === "All" || opportunity.type === currentOpportunityFilter);
     const cards = document.createDocumentFragment();
-    const visible = sampleOpportunities.filter((opportunity) => currentOpportunityFilter === "All" || opportunity.type === currentOpportunityFilter);
     for (const opportunity of visible) {
-      const profile = resolveProfile(opportunity.companyId);
-      if (!profile) continue;
-      const card = element("article", "opportunity-card");
-      const title = element("h3", "", opportunity.title);
-      title.id = `opportunity-${opportunity.id}`;
-      card.setAttribute("aria-labelledby", title.id);
-      const thumbnail = element("img", `opportunity-thumbnail opportunity-thumbnail-${opportunity.type.toLowerCase()}`);
-      thumbnail.src = opportunity.type === "Partner" ? "assets/networking.png" : "assets/collaboration.png";
-      thumbnail.alt = "";
-      thumbnail.width = 720;
-      thumbnail.height = 480;
-      thumbnail.loading = "lazy";
-      thumbnail.decoding = "async";
-      card.append(thumbnail);
-      card.append(element("p", "opportunity-type", `${opportunity.type} · Sample opportunity`));
-      card.append(title, element("p", "opportunity-company", profile.name));
-      card.append(element("p", "opportunity-copy", opportunity.summary));
-      const view = element("button", "company-link", "View sample opportunity");
-      view.type = "button";
-      view.addEventListener("click", () => openOpportunity(opportunity, view));
-      card.append(view);
-      cards.append(card);
+      if (resolveProfile(opportunity.companyId)) cards.append(opportunityCard(opportunity));
     }
     grid.replaceChildren(cards);
     document.querySelectorAll("[data-opportunity-filter]").forEach((button) => {
@@ -2440,30 +2660,421 @@
       button.setAttribute("aria-pressed", String(active));
     });
     const status = document.getElementById("opportunity-status");
-    if (status) status.textContent = `Showing ${visible.length} of ${sampleOpportunities.length} sample opportunities.`;
+    if (status) {
+      const mine = postedOpportunities.length ? ` ${postedOpportunities.length} posted in this browser.` : "";
+      status.textContent = `Showing ${visible.length} of ${all.length} opportunities.${mine}`;
+    }
+  }
+
+  function renderProfileOpportunities(profile, block) {
+    let list = block.querySelector("[data-profile-opportunities]");
+    if (!list) {
+      list = element("div", "profile-opportunities");
+      list.dataset.profileOpportunities = profile.id;
+      block.append(list);
+    }
+    list.replaceChildren();
+    const items = allOpportunities().filter((opportunity) => opportunity.companyId === profile.id);
+    list.append(element("p", "dialog-copy", items.length
+      ? profile.local ? "Requests this company posted. Saved in this browser." : "Opportunities connected to this sample company."
+      : "No opportunity posts yet."));
+    for (const opportunity of items) list.append(opportunityCard(opportunity, { thumbnail: false }));
+    if (profile.local) {
+      const post = element("button", "button button-secondary", "Post an opportunity");
+      post.type = "button";
+      post.addEventListener("click", () => openPostOpportunity(post, profile.id));
+      list.append(post);
+    }
+  }
+
+  function refreshOpportunityLists() {
+    renderOpportunities();
+    document.querySelectorAll("[data-profile-opportunities]").forEach((list) => {
+      const profile = resolveProfile(list.dataset.profileOpportunities);
+      if (profile && list.parentElement) renderProfileOpportunities(profile, list.parentElement);
+    });
+  }
+
+  function opportunityFits(opportunity) {
+    const poster = resolveProfile(opportunity.companyId);
+    const terms = matchTerms({ description: `${opportunity.title} ${opportunity.summary}`, services: opportunity.scope || [] });
+    const relations = poster ? matchRelations[poster.category] || [] : [];
+    const results = [];
+    for (const candidate of profiles) {
+      if (candidate.id === opportunity.companyId) continue;
+      const wanted = (opportunity.seeking || []).includes(candidate.category);
+      const candidateTerms = matchTerms(candidate);
+      const shared = [...terms].filter((term) => candidateTerms.has(term)).slice(0, 3);
+      if (!wanted && !shared.length) continue;
+      const reasons = [];
+      if (wanted) reasons.push(`${candidate.category}: the kind of company this request is looking for`);
+      if (shared.length) reasons.push(`Shared focus: ${shared.join(", ")}`);
+      const related = relations.some(([category]) => category === candidate.category);
+      results.push({ profile: candidate, reasons, score: (wanted ? 3 : 0) + shared.length * 1.5 + (related ? 1 : 0) });
+    }
+    return results.sort((a, b) => b.score - a.score || a.profile.name.localeCompare(b.profile.name)).slice(0, 3);
   }
 
   function openOpportunity(opportunity, opener) {
-    const dialog = document.getElementById("company-dialog");
-    const body = document.getElementById("company-dialog-body");
     const profile = resolveProfile(opportunity.companyId);
-    if (!dialog || !body || !profile) return;
-    body.replaceChildren();
-    body.append(element("p", "dialog-kicker", `${opportunity.type} · Sample opportunity`));
-    const title = element("h2", "dialog-heading", opportunity.title);
-    title.id = "company-dialog-title";
-    dialog.setAttribute("aria-labelledby", title.id);
-    body.append(title, element("p", "opportunity-company", profile.name));
-    body.append(element("p", "dialog-copy", opportunity.detail));
-    const scope = element("ul", "opportunity-scope");
-    for (const item of opportunity.scope) scope.append(element("li", "", item));
-    body.append(element("h3", "detail-label", "Sample discussion areas"), scope);
-    body.append(element("p", "ownership-note", "Design preview only. This fictional opportunity is not an active solicitation."));
-    const contact = element("button", "button button-primary", "Explore this company");
-    contact.type = "button";
-    contact.addEventListener("click", () => openCompany(profile, opener));
-    body.append(contact);
+    if (!profile) return;
+    const view = prepareDialog(opportunityLabel(opportunity), opportunity.title);
+    if (!view) return;
+    const { dialog, body } = view;
+    const poster = element("div", "opportunity-poster");
+    const avatar = element("div", "company-avatar");
+    avatar.classList.toggle("has-uploaded-logo", Boolean(profile.logo));
+    avatar.append(companyLogo(profile));
+    const who = element("div", "opportunity-poster-name");
+    who.append(element("strong", "", profile.name), element("span", "", `${profile.category} · ${profile.location}`));
+    const visit = element("button", "company-link", "View company profile");
+    visit.type = "button";
+    visit.addEventListener("click", () => openCompany(profile, opener));
+    poster.append(avatar, who, visit);
+    body.append(poster, element("p", "dialog-copy", opportunity.detail));
+    if (opportunity.location) body.append(element("p", "opportunity-company", `Location: ${opportunity.location}`));
+    if (opportunity.seeking?.length) body.append(element("p", "opportunity-company", `Looking for: ${opportunity.seeking.join(" or ")} companies`));
+    if (opportunity.scope?.length) {
+      const scope = element("ul", "opportunity-scope");
+      for (const item of opportunity.scope) scope.append(element("li", "", item));
+      body.append(element("h3", "detail-label", opportunity.local ? "Requirements" : "Sample discussion areas"), scope);
+    }
+    body.append(element("p", "ownership-note", opportunity.local
+      ? "Saved only in this browser. Other visitors will see posts once BOND launches accounts."
+      : "Design preview only. This fictional opportunity is not an active solicitation."));
+    const respond = element("section", "opportunity-respond");
+    renderOpportunityResponses(opportunity, respond);
+    body.append(respond);
+    const fits = opportunityFits(opportunity);
+    if (fits.length) {
+      body.append(element("h3", "detail-label", "Companies that could fit"));
+      const list = element("ul", "opportunity-fits");
+      for (const fit of fits) {
+        const item = element("li", "opportunity-fit");
+        const open = element("button", "company-link", "View profile");
+        open.type = "button";
+        open.setAttribute("aria-label", `View ${fit.profile.name} profile`);
+        open.addEventListener("click", () => openCompany(fit.profile, opener));
+        item.append(element("strong", "", fit.profile.name), element("span", "", fit.reasons[0]), open);
+        list.append(item);
+      }
+      body.append(list, element("p", "match-disclosure", "Suggestions come from the industries the request names and shared capabilities. AI matching that reads full profiles is planned."));
+    }
+    if (opportunity.local) {
+      const remove = element("button", "danger-link", "Remove this post");
+      remove.type = "button";
+      remove.addEventListener("click", () => {
+        if (remove.dataset.confirm !== "yes") {
+          remove.dataset.confirm = "yes";
+          remove.textContent = "Tap again to remove this post";
+          return;
+        }
+        const index = postedOpportunities.findIndex((item) => item.id === opportunity.id);
+        if (index !== -1) postedOpportunities.splice(index, 1);
+        delete responsesByOpportunity[opportunity.id];
+        savePostedOpportunities();
+        writeStoredValue(RESPONSES_KEY, responsesByOpportunity);
+        dialog.close();
+        refreshOpportunityLists();
+        announce("Your opportunity post was removed.");
+      });
+      body.append(remove);
+    }
     showDialog(dialog, opener);
+  }
+
+  function renderOpportunityResponses(opportunity, container) {
+    container.replaceChildren();
+    const profile = resolveProfile(opportunity.companyId);
+    const responses = responsesByOpportunity[opportunity.id] || [];
+    container.append(element("h3", "detail-label", opportunity.local ? "Responses" : "Interested? Respond"));
+    if (responses.length) {
+      const list = element("ul", "opportunity-responses");
+      for (const response of responses) {
+        const item = element("li", "opportunity-response");
+        const from = response.from ? resolveProfile(response.from) : null;
+        item.append(element("strong", "", from ? from.name : "You"), element("span", "", ` · ${shortDate(response.at)}`));
+        item.append(element("p", "", response.text || "Expressed interest."));
+        list.append(item);
+      }
+      container.append(list);
+    } else if (opportunity.local) {
+      container.append(element("p", "form-hint", "No responses yet. Until accounts launch, only responses sent from this browser appear here."));
+    }
+    const form = element("form", "chat-form opportunity-response-form");
+    const own = profiles.filter((item) => item.local && item.id !== opportunity.companyId);
+    const picker = companyPicker(`respond-as-${opportunity.id}`, "Respond as", { includeNone: true, selected: own[0]?.id || "" });
+    const messageId = `respond-message-${opportunity.id}-${++chatSequence}`;
+    const label = element("label", "chat-label", "Message (optional)");
+    label.htmlFor = messageId;
+    const textarea = element("textarea", "chat-input");
+    textarea.id = messageId;
+    textarea.rows = 3;
+    textarea.maxLength = 800;
+    textarea.placeholder = `Introduce your company and how you could help ${profile ? profile.name : "them"}.`;
+    const submit = element("button", "button button-primary", responses.length ? "Send another response" : "I'm interested");
+    submit.type = "submit";
+    const status = element("p", "chat-status");
+    status.setAttribute("role", "status");
+    const actions = element("div", "chat-actions");
+    actions.append(submit, dictationButton(textarea, status));
+    form.append(picker.label, picker.select, label, textarea, actions, status);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const from = knownProfileId(picker.select.value) ? picker.select.value : "";
+      if (!responsesByOpportunity[opportunity.id]) responsesByOpportunity[opportunity.id] = [];
+      responsesByOpportunity[opportunity.id].push({ text: cleanMessage(textarea.value).slice(0, 800), from, at: new Date().toISOString() });
+      const persisted = writeStoredValue(RESPONSES_KEY, responsesByOpportunity);
+      renderOpportunityResponses(opportunity, container);
+      refreshOpportunityLists();
+      const next = container.querySelector(".chat-status");
+      if (next) next.textContent = persisted
+        ? "Response saved in this browser. BOND will deliver responses to the posting company when it launches."
+        : "Response saved for this visit; browser storage is unavailable.";
+      container.querySelector("button[type=submit]")?.focus();
+    });
+    container.append(form);
+  }
+
+  function openPostOpportunity(opener, companyId = "") {
+    const view = prepareDialog("Opportunity Board · Post a request", "What does your business need?");
+    if (!view) return;
+    const { dialog, body } = view;
+    body.append(element("p", "dialog-copy", "Describe the partner, service, or collaboration you're looking for. Companies that fit can respond to your post."));
+    const form = element("form", "opportunity-form");
+    const picker = companyPicker("opportunity-company", "Posting as", { selected: companyId });
+    if (!picker.hasOwn) createProfileHint(body);
+    const field = (tag, id, labelText, attributes = {}) => {
+      const label = element("label", "", labelText);
+      label.htmlFor = id;
+      const input = element(tag);
+      input.id = id;
+      Object.assign(input, attributes);
+      form.append(label, input);
+      return input;
+    };
+    form.append(picker.label, picker.select);
+    const typeLabel = element("label", "", "Type of opportunity");
+    typeLabel.htmlFor = "opportunity-type";
+    const type = element("select");
+    type.id = "opportunity-type";
+    for (const [value, text] of Object.entries(opportunityTypes)) type.append(new Option(text, value));
+    type.value = "Service";
+    form.append(typeLabel, type);
+    const title = field("input", "opportunity-title", "Headline", { maxLength: 100, required: true, placeholder: "Looking for a website developer" });
+    const summary = field("textarea", "opportunity-summary", "What do you need?", { rows: 4, maxLength: 600, required: true, placeholder: "The work, the timeline, and what a good partner looks like." });
+    const seekingLabel = element("label", "", "Who could help? (optional)");
+    seekingLabel.htmlFor = "opportunity-seeking";
+    const seeking = element("select");
+    seeking.id = "opportunity-seeking";
+    seeking.append(new Option("Any industry", ""));
+    categories.filter((category) => category !== "Other industry").forEach((category) => seeking.append(new Option(category, category)));
+    form.append(seekingLabel, seeking);
+    const scope = field("input", "opportunity-scope", "Requirements (optional)", { maxLength: 300, placeholder: "Licensed in California, available in May" });
+    form.append(element("p", "form-hint", "Separate requirements with commas. Up to five."));
+    const location = field("input", "opportunity-location", "Location or service area (optional)", { maxLength: 80, placeholder: "San Diego County" });
+    const submit = element("button", "button button-primary", "Post opportunity");
+    submit.type = "submit";
+    const status = element("p", "chat-status");
+    status.setAttribute("role", "status");
+    form.append(submit, status);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const record = {
+        id: newId("opp"), type: opportunityTypes[type.value] ? type.value : "Service",
+        companyId: knownProfileId(picker.select.value) ? picker.select.value : "",
+        title: cleanText(title.value, 100), summary: cleanText(summary.value, 600),
+        scope: parseList(scope.value, 5, 80), seeking: categories.includes(seeking.value) ? [seeking.value] : [],
+        location: cleanText(location.value, 80), at: new Date().toISOString(), local: true,
+      };
+      record.detail = record.summary;
+      if (!record.companyId || !record.title || !record.summary) {
+        status.textContent = "Choose a company and add a headline and description.";
+        (!record.title ? title : summary).focus();
+        return;
+      }
+      postedOpportunities.unshift(record);
+      const persisted = savePostedOpportunities();
+      currentOpportunityFilter = "All";
+      refreshOpportunityLists();
+      openOpportunity(record, opener);
+      announce(persisted ? "Opportunity posted. It's saved in this browser." : "Opportunity posted for this visit; browser storage is unavailable.");
+    });
+    body.append(form);
+    showDialog(dialog, opener);
+    title.focus();
+  }
+
+  function openConversation(profile, opener, prefill = "") {
+    const view = prepareDialog("Start a conversation", `Message ${profile.name}`);
+    if (!view) return;
+    const chat = element("div", "profile-demo-chat");
+    renderChat(profile, chat);
+    view.body.append(chat);
+    const textarea = chat.querySelector("textarea");
+    if (textarea && prefill) textarea.value = prefill;
+    showDialog(view.dialog, opener);
+    textarea?.focus();
+  }
+
+  function feedPostCard(post, { showCompany = true } = {}) {
+    const profile = resolveProfile(post.companyId);
+    const card = element("article", "feed-post");
+    const head = element("div", "feed-post-head");
+    const avatar = element("div", "company-avatar");
+    avatar.classList.toggle("has-uploaded-logo", Boolean(profile.logo));
+    avatar.append(companyLogo(profile));
+    const who = element("div", "feed-post-who");
+    const name = element("button", "feed-company", profile.name);
+    name.type = "button";
+    name.addEventListener("click", () => openCompany(profile, name));
+    who.append(name, element("span", "feed-meta", `${profile.category} · ${timeAgo(post.at)} · ${post.local ? "Shared in this browser" : "Sample update"}`));
+    head.append(avatar, who);
+    if (showCompany && !profile.local) head.append(followButton(profile, "button button-secondary feed-follow"));
+    card.setAttribute("aria-label", `${postTypes[post.type]} from ${profile.name}`);
+    card.append(head, element("span", "feed-type", postTypes[post.type]), element("p", "feed-text", post.text));
+    const actions = element("div", "feed-actions");
+    const talk = element("button", "button button-primary", "Start a conversation");
+    talk.type = "button";
+    talk.addEventListener("click", () => {
+      const firstName = (profile.representative || "").split(" ")[0] || "there";
+      const snippet = post.text.length > 60 ? `${post.text.slice(0, 60).trim()}…` : post.text;
+      openConversation(profile, talk, `Hi ${firstName}, I saw your update: "${snippet}" `);
+    });
+    if (!profile.local) actions.append(talk);
+    if (post.local) {
+      const remove = element("button", "danger-link", "Remove");
+      remove.type = "button";
+      remove.addEventListener("click", () => {
+        if (remove.dataset.confirm !== "yes") {
+          remove.dataset.confirm = "yes";
+          remove.textContent = "Tap again to remove";
+          return;
+        }
+        const index = postedUpdates.findIndex((item) => item.id === post.id);
+        if (index !== -1) postedUpdates.splice(index, 1);
+        savePostedUpdates();
+        refreshFeeds();
+        announce("Your update was removed.");
+      });
+      actions.append(remove);
+    }
+    card.append(actions);
+    return card;
+  }
+
+  function paintFeedFilters() {
+    document.querySelectorAll("[data-feed-filter]").forEach((button) => {
+      const active = button.dataset.feedFilter === currentFeedFilter;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+      if (button.dataset.feedFilter === "Following") button.textContent = followedCompanies.size ? `Following (${followedCompanies.size})` : "Following";
+    });
+  }
+
+  function renderFeed() {
+    const feed = document.getElementById("activity-feed");
+    if (!feed) return;
+    const posts = allPosts().filter((post) => resolveProfile(post.companyId) && (currentFeedFilter === "All" || followedCompanies.has(post.companyId)));
+    feed.replaceChildren();
+    if (!posts.length) {
+      feed.append(element("p", "feed-empty", currentFeedFilter === "Following"
+        ? "You're not following any companies yet. Tap Follow on an update or a company profile to see its news here."
+        : "No updates yet."));
+    }
+    posts.slice(0, feedLimit).forEach((post) => feed.append(feedPostCard(post)));
+    if (posts.length > feedLimit) {
+      const more = element("button", "button button-secondary feed-more", "Show more updates");
+      more.type = "button";
+      more.addEventListener("click", () => {
+        feedLimit += 8;
+        renderFeed();
+      });
+      feed.append(more);
+    }
+    paintFeedFilters();
+    const status = document.getElementById("feed-status");
+    if (status) status.textContent = `Showing ${Math.min(posts.length, feedLimit)} of ${posts.length} updates.`;
+  }
+
+  function renderCompanyPosts(profile, block) {
+    let list = block.querySelector("[data-company-posts]");
+    if (!list) {
+      list = element("div", "company-posts");
+      list.dataset.companyPosts = profile.id;
+      block.append(list);
+    }
+    list.replaceChildren();
+    const posts = allPosts().filter((post) => post.companyId === profile.id);
+    const intro = element("div", "company-posts-intro");
+    intro.append(element("p", "dialog-copy", posts.length ? "Projects, capabilities, partnerships, hiring, and events from this company." : "No updates yet."));
+    if (!profile.local) intro.append(followButton(profile, "button button-secondary"));
+    list.append(intro);
+    posts.forEach((post) => list.append(feedPostCard(post, { showCompany: false })));
+    if (profile.local) {
+      const share = element("button", "button button-secondary", "Share an update");
+      share.type = "button";
+      share.addEventListener("click", () => openShareUpdate(share, profile.id));
+      list.append(share);
+    }
+  }
+
+  function refreshFeeds() {
+    renderFeed();
+    document.querySelectorAll("[data-company-posts]").forEach((list) => {
+      const profile = resolveProfile(list.dataset.companyPosts);
+      if (profile && list.parentElement) renderCompanyPosts(profile, list.parentElement);
+    });
+  }
+
+  function openShareUpdate(opener, companyId = "") {
+    const view = prepareDialog("Company activity · Share an update", "What's new at your company?");
+    if (!view) return;
+    const { dialog, body } = view;
+    body.append(element("p", "dialog-copy", "Share a project, a new capability, a partnership, a hiring announcement, or an upcoming event. Followers see it in their feed."));
+    const picker = companyPicker("update-company", "Posting as", { selected: companyId });
+    if (!picker.hasOwn) createProfileHint(body);
+    const form = element("form", "chat-form update-form");
+    const typeLabel = element("label", "", "Type of update");
+    typeLabel.htmlFor = "update-type";
+    const type = element("select");
+    type.id = "update-type";
+    for (const [value, text] of Object.entries(postTypes)) type.append(new Option(text, value));
+    const label = element("label", "", "Your update");
+    label.htmlFor = "update-text";
+    const textarea = element("textarea", "chat-input");
+    textarea.id = "update-text";
+    textarea.rows = 4;
+    textarea.maxLength = 500;
+    textarea.required = true;
+    textarea.placeholder = "We just finished… / We're hiring… / Join us at…";
+    const submit = element("button", "button button-primary", "Share update");
+    submit.type = "submit";
+    const status = element("p", "chat-status");
+    status.setAttribute("role", "status");
+    const actions = element("div", "chat-actions");
+    actions.append(submit, dictationButton(textarea, status));
+    form.append(picker.label, picker.select, typeLabel, type, label, textarea, actions, status);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const text = cleanMessage(textarea.value).slice(0, 500);
+      const companyChoice = knownProfileId(picker.select.value) ? picker.select.value : "";
+      if (!text || !companyChoice) {
+        status.textContent = "Write your update before sharing.";
+        textarea.focus();
+        return;
+      }
+      const post = { id: newId("post"), type: postTypes[type.value] ? type.value : "project", companyId: companyChoice, text, at: new Date().toISOString(), local: true };
+      postedUpdates.unshift(post);
+      const persisted = savePostedUpdates();
+      currentFeedFilter = "All";
+      refreshFeeds();
+      dialog.close();
+      announce(persisted ? "Update shared. It's saved in this browser." : "Update shared for this visit; browser storage is unavailable.");
+    });
+    body.append(form);
+    showDialog(dialog, opener);
+    textarea.focus();
   }
 
   function showReplay(profile, opener) {
@@ -2880,6 +3491,21 @@
         }
       });
     });
+    document.querySelectorAll("[data-post-opportunity]").forEach((button) => {
+      button.addEventListener("click", () => openPostOpportunity(button));
+    });
+    document.querySelectorAll("[data-share-update]").forEach((button) => {
+      button.addEventListener("click", () => openShareUpdate(button));
+    });
+    document.querySelectorAll("[data-feed-filter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const next = button.dataset.feedFilter;
+        if (next !== "All" && next !== "Following") return;
+        currentFeedFilter = next;
+        feedLimit = 8;
+        renderFeed();
+      });
+    });
 
     const form = document.getElementById("join-form");
     const uploads = form ? configureProfileUploads(form) : null;
@@ -2983,6 +3609,7 @@
     renderMatchmaker();
     renderExpoFloor();
     renderOpportunities();
+    renderFeed();
     renderFullCompanyProfile();
   }
 

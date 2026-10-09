@@ -26,7 +26,7 @@ Open http://localhost:3000. The site is plain HTML, CSS, and JavaScript; it need
 - `dist/expos.html` — interactive expo preview.
 - `dist/company.html` — company profile preview.
 - `dist/app.js` — shared interactions, demo profiles, filters, and browser-local behavior.
-- `dist/*.css` — styles; `dist/homepage.css` holds the homepage discovery section (search, industry strip, featured businesses, next-expo preview); `dist/expo-floor.css` holds the Live Expos booth floor; `dist/spotlight.css` holds the Spotlight premiere timeline and Live Q&A panel; `dist/matches.css` holds business matchmaking (homepage try-it, suggested matches on profiles, post-signup matches); `dist/profiles.css` holds the company profile page, including the contact bar, section navigation, intro video, certifications, and projects.
+- `dist/*.css` — styles; `dist/homepage.css` holds the homepage discovery section (search, industry strip, featured businesses, next-expo preview); `dist/expo-floor.css` holds the Live Expos booth floor; `dist/spotlight.css` holds the Spotlight premiere timeline and Live Q&A panel; `dist/matches.css` holds business matchmaking (homepage try-it, suggested matches on profiles, post-signup matches); `dist/profiles.css` holds the company profile page, including the contact bar, section navigation, intro video, certifications, and projects. `dist/board.css` holds the Opportunity Board (posting, responses, companies that could fit) and the Company Activity feed (updates, follow, start a conversation).
 - `dist/assets/` — BOND logos and photography, including the `industry-*.jpg` tiles and the `project-*.jpg` sample portfolio photos.
 - `dist/assets/qa/` — synthetic sample voice clips for the Live Q&A tab (see `ASSET_NOTES.md`).
 - Uploaded intro videos and project photos are stored in the visitor's browser (IndexedDB database `bond-demo-media`); profile text stays in `localStorage`.
@@ -43,7 +43,7 @@ Live Q&A audio runs on [LiveKit Cloud](https://cloud.livekit.io) (project "BOND"
 - Representatives open any expo page with `?host` at the end of the address, go to Live Q&A, and enter the host code to see raised hands, pass or take back the mic, and answer live.
 - Without the API (for example, a static-only server) the page falls back to the recorded preview automatically.
 
-Environment variables (Vercel **Preview** only for now; never commit them): `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `BOND_HOST_CODE` (12+ characters). Local copies live in macOS Keychain under project `bond` (`dev-secret list --project bond`).
+Environment variables (set in Vercel **Preview** and **Production**; never commit them): `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `BOND_HOST_CODE` (12+ characters). Local copies live in macOS Keychain under project `bond` (`dev-secret list --project bond`).
 
 Local test without real keys:
 

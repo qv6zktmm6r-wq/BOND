@@ -64,24 +64,27 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 - [x] Click the company logo on the video to open the side panel without leaving the video (the video widens during the premiere and keeps playing while the panel is open)
 - [x] Voice Q&A: raise hand, the representative passes the mic, talk with live captions and an on-air banner on the stage; the recording and text are saved to the Q&A list for replay (in this browser)
 - [x] Away representatives: record a voice question to be answered on the replay
-- [x] Everyone in the room hears the speaker live, with live captions (LiveKit, free Build plan; Vercel preview deployments)
+- [x] Everyone in the room hears the speaker live, with live captions (LiveKit, free Build plan; Vercel preview and production)
 - [x] Representative controls (`?host` + host code): see raised hands, pass or take back the mic, answer live
-- [ ] Live audio on production (owner approval to add the LiveKit variables to Production and deploy)
+- [x] Live audio on production: LiveKit variables added to Vercel Production and deployed (October 9, 2026)
+- [x] Voice typing: a Speak mic button next to Send in the demo chat, Live Q&A, and opportunity responses
 - [ ] Representative accounts instead of a shared host code (needs BOND sign-in)
 - [ ] Real video playback and live streaming (needs video hosting)
 
 ## 5. Opportunity Board
 
 - [x] Sample opportunities with filters (partnerships, service needs, collaborations)
-- [ ] Companies post their own requests ("Looking for a website developer", "Seeking a logistics partner", "Need a certified subcontractor")
-- [ ] Respond to or express interest in a request
-- [ ] Opportunities linked to the posting company's profile and matches
+- [x] Companies post their own requests ("Looking for a website developer", "Seeking a logistics partner", "Need a certified subcontractor"): type, headline, description, who could help, requirements, and location; saved in the browser, with a remove option
+- [x] Respond to or express interest in a request, as one of your companies or just yourself, with an optional message (voice typing available)
+- [x] Opportunities linked to the posting company's profile (new Opportunities section on every profile) and to "Companies that could fit"
+- [ ] Posts and responses visible to everyone and delivered to the posting company (needs accounts and a database)
 
 ## 6. Company Activity Feed
 
-- [ ] Companies publish projects, new capabilities, partnerships, hiring announcements, and upcoming events
-- [ ] Follow a company
-- [ ] Start a connection from a feed post
+- [x] Companies publish projects, new capabilities, partnerships, hiring announcements, and upcoming events (homepage feed, plus an Activity section on every profile)
+- [x] Follow a company from the feed, its profile, or the expo side panel; a Following filter shows only followed companies
+- [x] Start a conversation from a feed post (opens the demo chat with the post quoted)
+- [ ] Shared updates and follows visible across devices, with notifications (needs accounts and a database)
 
 ## Member Dashboard (medium priority)
 
@@ -118,5 +121,5 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 
 - [x] Hosting moved to Vercel; joinbond.world and www attached to the project
 - [!] Namecheap DNS: A records for `@` and `www` pointing to 76.76.21.21, and the parking records removed
-- [!] Approve the production deploy of `feature/homepage-refresh`
+- [x] Production deploy of `feature/homepage-refresh` (main fast-forwarded and deployed October 9, 2026; attached to joinbond.world and www, waiting on DNS)
 - [!] Unpublish the old ChatGPT Site
