@@ -5,6 +5,7 @@
   const MESSAGES_KEY = "bond.demo.messages";
   const SAVED_KEY = "bond.demo.saved";
   const MEETINGS_KEY = "bond.demo.meetings";
+  const QUESTIONS_KEY = "bond.demo.questions";
   const MAX_UPLOAD_BYTES = 1024 * 1024;
   const MAX_IMAGE_DATA_URL_LENGTH = 1.5 * 1024 * 1024;
   const MAX_PROFILE_STORAGE_LENGTH = 6 * 1024 * 1024;
@@ -166,6 +167,7 @@
   const profiles = [...sampleProfiles, ...readSavedProfiles()];
   const savedCompanies = new Set(readStoredIds(SAVED_KEY));
   const messagesByCompany = readSavedMessages();
+  const questionsByCompany = readSavedMessages(QUESTIONS_KEY);
   const meetingRequests = readSavedMeetings();
   let currentFilter = "All";
   let currentOpportunityFilter = "All";
@@ -402,9 +404,9 @@
     return typeof value === "string" ? value.replace(/\r\n/g, "\n").trim().slice(0, 1500) : "";
   }
 
-  function readSavedMessages() {
+  function readSavedMessages(key = MESSAGES_KEY) {
     const result = Object.create(null);
-    const stored = readStoredValue(MESSAGES_KEY);
+    const stored = readStoredValue(key);
     if (!stored || typeof stored !== "object" || Array.isArray(stored)) return result;
     for (const [id, entries] of Object.entries(stored)) {
       if (!knownProfileId(id) || !Array.isArray(entries)) continue;
@@ -542,7 +544,7 @@
   }
 
   const boothPresence = { nova: "presenting", aero: "available", vector: "available", lumen: "available", fieldstone: "available", forge: "available", helix: "away", creston: "away" };
-  const presenceLabels = { presenting: "Presenting on the main stage", available: "Representative available", away: "Representative away" };
+  const presenceLabels = { presenting: "Premiering on the main stage", available: "Representative available", away: "Representative away" };
   let currentFloorFilter = "All";
 
   function boothNumber(profile) {
@@ -952,7 +954,7 @@
       card.append(button);
       opportunitySection.append(card);
     }
-    const spotlight = section("Business Spotlight", "A planned five-minute camera presentation introduces the company. Audience Q&A, profile-linked replays, and follow-up conversations continue the introduction. This preview shows the replay format as text.");
+    const spotlight = section("Business Spotlight", "A five-minute Spotlight, recorded by the company in its own space or presented live, premieres on the main stage and is followed by live Q&A. The recording stays on this profile as a replay. This preview shows the replay format as text.");
     const replay = element("button", "button button-secondary", "Explore replay format");
     replay.type = "button";
     replay.addEventListener("click", () => showReplay(profile, replay));
@@ -988,9 +990,11 @@
     tabs.setAttribute("aria-label", `${profile.name} preview panels`);
     const profileTab = element("button", "expo-panel-tab", "Company profile");
     const messageTab = element("button", "expo-panel-tab", "1:1 demo chat");
+    const qaTab = element("button", "expo-panel-tab", "Live Q&A");
     const companyPanel = element("div", "panel-company");
     const messagePanel = element("div", "panel-message");
-    const entries = [{ key: "profile", button: profileTab, panel: companyPanel }, { key: "message", button: messageTab, panel: messagePanel }];
+    const qaPanel = element("div", "panel-qa");
+    const entries = [{ key: "profile", button: profileTab, panel: companyPanel }, { key: "message", button: messageTab, panel: messagePanel }, { key: "qa", button: qaTab, panel: qaPanel }];
     for (const entry of entries) {
       entry.button.type = "button";
       entry.button.dataset.expoPanel = entry.key;
@@ -1015,7 +1019,8 @@
       entry.button.addEventListener("click", () => activateTab(entry.key));
       entry.button.addEventListener("keydown", (event) => {
         let next;
-        if (event.key === "ArrowRight" || event.key === "ArrowLeft") next = entries[(index + 1) % entries.length];
+        if (event.key === "ArrowRight") next = entries[(index + 1) % entries.length];
+        else if (event.key === "ArrowLeft") next = entries[(index - 1 + entries.length) % entries.length];
         else if (event.key === "Home") next = entries[0];
         else if (event.key === "End") next = entries[entries.length - 1];
         if (next) {
@@ -1032,9 +1037,180 @@
       },
     });
     renderChat(profile, messagePanel);
-    tabs.append(profileTab, messageTab);
-    container.append(header, tabs, companyPanel, messagePanel);
+    renderQA(profile, qaPanel);
+    tabs.append(profileTab, messageTab, qaTab);
+    container.append(header, tabs, companyPanel, messagePanel, qaPanel);
     activateTab(initialTab);
+  }
+
+  const STAGE_COMPANY_ID = "nova";
+  const PREMIERE_SECONDS = 300;
+  const PREMIERE_DEMO_MS = 20000;
+  const premiereChapters = [[0, "Who we are"], [60, "The problem we solve"], [120, "How we help"], [210, "Proof: projects and clients"], [270, "How to connect"]];
+  const premiereTags = { ready: "Premiere · Recorded Spotlight", premiere: "Premiering now · Recorded", qa: "Live Q&A · Open" };
+  const sampleQuestions = {
+    nova: [
+      { text: "Do you handle same-day deliveries across Southern California?", answer: "For scheduled regional routes, yes. We plan same-day windows with each client." },
+      { text: "Can your dispatch reporting connect to our existing inventory system?" },
+    ],
+    helix: [{ text: "Do you help with incentive and rebate paperwork for solar projects?" }],
+    lumen: [{ text: "How long does a typical dashboard project take?", answer: "Most first versions take four to six weeks, depending on the data sources." }],
+  };
+  let premierePhase = "ready";
+  let premiereTimer;
+
+  function formatClock(seconds) {
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  }
+
+  function qaStatusText(profile) {
+    const rep = profile.representative || "The company representative";
+    if (presenceOf(profile) === "away") return `${rep} is away. Questions are saved and answered on the replay.`;
+    if (profile.id !== STAGE_COMPANY_ID) return `${rep} is at the booth and answers questions here.`;
+    if (premierePhase === "premiere") return `Premiere playing. Ask now; ${rep} answers live when the video ends.`;
+    if (premierePhase === "qa") return `Live Q&A is open. ${rep} is answering questions now.`;
+    return `Ask before or during the premiere. ${rep} answers live after the video.`;
+  }
+
+  function renderQA(profile, container) {
+    container.replaceChildren();
+    container.classList.add("expo-qa");
+    container.append(element("h4", "detail-label", "Live Q&A"));
+    const status = element("p", "qa-status", qaStatusText(profile));
+    status.dataset.qaStatus = profile.id;
+    status.setAttribute("aria-live", "polite");
+    container.append(status);
+    const questions = [...(sampleQuestions[profile.id] || []), ...(questionsByCompany[profile.id] || []).map((entry) => ({ text: entry.text, local: true }))];
+    if (questions.length) {
+      const list = element("ol", "qa-list");
+      for (const question of questions) {
+        const item = element("li", "qa-item");
+        item.append(element("p", "qa-meta", question.local ? "Your question · Saved in this browser" : "Sample question"), element("p", "qa-question", question.text));
+        if (question.answer) item.append(element("p", "qa-answer", `${profile.representative || "Representative"} · Sample answer: ${question.answer}`));
+        list.append(item);
+      }
+      container.append(list);
+    } else container.append(element("p", "chat-empty", "No questions yet. Ask the first one."));
+    const form = element("form", "chat-form qa-form");
+    const inputId = `qa-question-${profile.id}-${++chatSequence}`;
+    const label = element("label", "chat-label", "Your question");
+    label.htmlFor = inputId;
+    const textarea = element("textarea", "chat-input");
+    textarea.id = inputId;
+    textarea.rows = 2;
+    textarea.maxLength = 500;
+    textarea.required = true;
+    textarea.placeholder = `Ask ${profile.name} about its services, experience, or availability…`;
+    const submit = element("button", "button button-primary", "Ask question");
+    submit.type = "submit";
+    const formStatus = element("p", "chat-status");
+    formStatus.setAttribute("role", "status");
+    textarea.addEventListener("input", () => textarea.setCustomValidity(""));
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const text = cleanMessage(textarea.value).slice(0, 500);
+      if (!text) {
+        textarea.setCustomValidity("Write a question before submitting.");
+        textarea.reportValidity();
+        return;
+      }
+      if (!questionsByCompany[profile.id]) questionsByCompany[profile.id] = [];
+      questionsByCompany[profile.id].push({ text, at: new Date().toISOString() });
+      const persisted = writeStoredValue(QUESTIONS_KEY, questionsByCompany);
+      renderQA(profile, container);
+      container.querySelector("textarea")?.focus();
+      const nextStatus = container.querySelector(".chat-status");
+      if (nextStatus) nextStatus.textContent = persisted ? "Question added. In this preview it is saved only in this browser." : "Question added for this visit; browser storage is unavailable.";
+    });
+    form.append(label, textarea, submit, formStatus);
+    container.append(form);
+  }
+
+  function setPremierePhase(phase) {
+    premierePhase = phase;
+    const tag = document.getElementById("stage-tag");
+    if (tag) tag.textContent = premiereTags[phase];
+    document.querySelector(".expo-stage")?.setAttribute("data-phase", phase);
+    document.querySelectorAll("[data-qa-status]").forEach((node) => {
+      const profile = resolveProfile(node.dataset.qaStatus);
+      if (profile) node.textContent = qaStatusText(profile);
+    });
+  }
+
+  function showStageCompany(tab) {
+    const profile = resolveProfile(STAGE_COMPANY_ID);
+    if (!profile) return;
+    renderExpoPanel(profile, tab);
+    document.querySelectorAll("[data-expo-company]").forEach((button) => {
+      const active = button.dataset.expoCompany === STAGE_COMPANY_ID;
+      button.classList.toggle("is-active", active);
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+  }
+
+  function runPremiere() {
+    const stage = document.querySelector(".expo-stage");
+    const center = stage?.querySelector(".stage-center");
+    if (!stage || !center || premierePhase === "premiere") return;
+    clearInterval(premiereTimer);
+    let bar = stage.querySelector(".premiere-bar");
+    if (!bar) {
+      bar = element("div", "premiere-bar");
+      bar.tabIndex = -1;
+      const meta = element("div", "premiere-meta");
+      const chapter = element("span", "premiere-chapter");
+      chapter.setAttribute("aria-live", "polite");
+      meta.append(chapter, element("span", "premiere-time"));
+      const track = element("div", "premiere-track");
+      track.setAttribute("role", "progressbar");
+      track.setAttribute("aria-label", "Premiere progress");
+      track.setAttribute("aria-valuemin", "0");
+      track.setAttribute("aria-valuemax", String(PREMIERE_SECONDS));
+      track.append(element("span", "premiere-fill"));
+      bar.append(meta, track, element("p", "premiere-note", "Sample still with a compressed 20-second timeline. Uploaded Spotlight videos will play here."));
+      stage.querySelector(".stage-bottom")?.before(bar);
+    }
+    const chapter = bar.querySelector(".premiere-chapter");
+    const time = bar.querySelector(".premiere-time");
+    const track = bar.querySelector(".premiere-track");
+    const fill = bar.querySelector(".premiere-fill");
+    center.hidden = true;
+    bar.hidden = false;
+    bar.focus();
+    setPremierePhase("premiere");
+    showStageCompany("qa");
+    const started = performance.now();
+    const tick = () => {
+      const progress = Math.min(1, (performance.now() - started) / PREMIERE_DEMO_MS);
+      const seconds = Math.round(progress * PREMIERE_SECONDS);
+      const current = premiereChapters.filter(([start]) => start <= seconds).pop()[1];
+      if (chapter.textContent !== current) chapter.textContent = current;
+      time.textContent = `${formatClock(seconds)} / ${formatClock(PREMIERE_SECONDS)}`;
+      fill.style.width = `${progress * 100}%`;
+      track.setAttribute("aria-valuenow", String(seconds));
+      track.setAttribute("aria-valuetext", `${formatClock(seconds)} of ${formatClock(PREMIERE_SECONDS)}, ${current}`);
+      if (progress >= 1) {
+        clearInterval(premiereTimer);
+        endPremiere(stage, center, bar);
+      }
+    };
+    tick();
+    premiereTimer = setInterval(tick, 250);
+  }
+
+  function endPremiere(stage, center, bar) {
+    const profile = resolveProfile(STAGE_COMPANY_ID);
+    bar.hidden = true;
+    center.hidden = false;
+    const heading = center.querySelector("h3");
+    if (heading) heading.textContent = "Live Q&A is open.";
+    const copy = center.querySelector("p");
+    if (copy) copy.textContent = `Ask ${profile?.representative || "the representative"} a question beside the stage · Replay the premiere preview`;
+    center.querySelector("#expo-preview")?.setAttribute("aria-label", "Replay the premiere preview");
+    setPremierePhase("qa");
+    center.querySelector("#expo-preview")?.focus();
+    announce("The premiere ended. Live Q&A is open.");
   }
 
   function renderOpportunities() {
@@ -1110,7 +1286,7 @@
     title.id = "company-dialog-title";
     dialog.setAttribute("aria-labelledby", title.id);
     body.append(title);
-    body.append(element("p", "dialog-copy", "Explore the outline of a sample five-minute camera presentation and follow-up Q&A. This design preview contains a text overview; recorded video is planned for launch."));
+    body.append(element("p", "dialog-copy", "Explore the outline of a sample five-minute Spotlight and its follow-up Q&A. This design preview contains a text overview; uploaded Spotlight videos are planned for launch."));
     const outline = element("ol", "spotlight-outline");
     outline.append(
       element("li", "", "00:00 — Company introduction and story."),
@@ -1132,20 +1308,21 @@
     const body = document.getElementById("company-dialog-body");
     if (!dialog || !body) return;
     body.replaceChildren();
-    body.append(element("p", "dialog-kicker", "Business Spotlight · Design preview"));
-    const title = element("h2", "dialog-heading", "Five minutes. Your business in focus.");
+    body.append(element("p", "dialog-kicker", "Business Spotlight · How it works"));
+    const title = element("h2", "dialog-heading", "Five minutes. Your business. Your way.");
     title.id = "company-dialog-title";
     dialog.setAttribute("aria-labelledby", title.id);
     body.append(title);
-    body.append(element("p", "dialog-copy", "BOND’s planned Business Spotlight gives an authorized company representative five minutes on camera to introduce the business, its story, and its capabilities. Visitors can explore company profiles and a 1:1 conversation beside the presentation."));
-    body.append(element("p", "dialog-copy", "This is a sample presentation format. Camera streaming, follow-up audience Q&A, and recorded replays are planned for launch. The company profiles and local demo conversations can be explored in this preview."));
-    body.append(element("h3", "detail-label", "A sample five-minute outline"));
+    body.append(element("p", "dialog-copy", "Record your five-minute Spotlight in your own space, on your own schedule, with as many takes as you need, then upload it. BOND premieres it on the main stage at a scheduled time so everyone watches together, then opens live Q&A with your representative. Prefer to present live? You can stream instead."));
+    body.append(element("p", "dialog-copy", "In this preview the video is a sample still and the premiere timeline is compressed. Video upload, live streaming, captions, and replays are planned for launch."));
+    body.append(element("h3", "detail-label", "A suggested five-minute outline"));
     const outline = element("ol", "spotlight-outline");
     outline.append(
-      element("li", "", "Minute 1: Introduce your company and the problem you solve."),
-      element("li", "", "Minutes 2–4: Present your services, capabilities, or work."),
-      element("li", "", "Minute 5: Invite visitors to connect and continue the conversation."),
-      element("li", "", "After the five-minute spotlight: Open audience Q&A and keep the company profile available for follow-up."),
+      element("li", "", "Minute 1: Who you are and why your company exists."),
+      element("li", "", "Minute 2: The problem you solve and who you solve it for."),
+      element("li", "", "Minutes 3–4: How you help, with proof such as projects, products, or clients."),
+      element("li", "", "Minute 5: How another company can work with you."),
+      element("li", "", "After the premiere: Live Q&A. The recording stays on your profile as a replay."),
     );
     body.append(outline);
     const button = element("button", "button button-primary", "Try a company profile");
@@ -1401,7 +1578,8 @@
     });
     const firstExpoProfile = expoButtons.length ? resolveProfile(expoButtons[0].dataset.expoCompany || expoButtons[0].dataset.company) : sampleProfiles[0];
     if (firstExpoProfile) renderExpoPanel(firstExpoProfile);
-    document.getElementById("expo-preview")?.addEventListener("click", (event) => showSpotlight(event.currentTarget));
+    document.getElementById("expo-preview")?.addEventListener("click", runPremiere);
+    document.getElementById("spotlight-info")?.addEventListener("click", (event) => showSpotlight(event.currentTarget));
     document.querySelectorAll("[data-replay], button#expo-replay").forEach((button) => {
       button.addEventListener("click", () => showReplay(resolveProfile(button.dataset.replay) || currentExpoProfile, button));
     });

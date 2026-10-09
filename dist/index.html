@@ -17,6 +17,7 @@
   <link rel="stylesheet" href="enhancements.css">
   <link rel="stylesheet" href="profiles.css">
   <link rel="stylesheet" href="imagery.css">
+  <link rel="stylesheet" href="spotlight.css">
   <link rel="stylesheet" href="homepage.css">
   <script src="app.js" defer></script>
 </head>
@@ -94,7 +95,7 @@
                 <li><span>10:10</span>ForgeWorks Manufacturing<small>Prototyping</small></li>
               </ol>
               <a class="button button-primary button-wide" href="expos.html#floor">Walk the expo floor <span aria-hidden="true">↗</span></a>
-              <p class="next-expo-note">Five-minute live Spotlights with Q&amp;A. Live scheduling is planned; this lineup is illustrative.</p>
+              <p class="next-expo-note">Recorded five-minute Spotlights premiere on the main stage, then live Q&amp;A. Scheduling is planned; this lineup is illustrative.</p>
             </div>
           </aside>
         </div>
@@ -115,7 +116,7 @@
         </div>
         <div class="principles principles-row">
           <article class="principle"><span class="step-number">01</span><div><h3>Give your company a home.</h3><p>Services, history, location, and authorized representatives in a permanent company profile.</p></div></article>
-          <article class="principle"><span class="step-number">02</span><div><h3>Introduce it to the world.</h3><p>Live virtual expos, camera presentations, and five-minute Business Spotlights with Q&amp;A.</p></div></article>
+          <article class="principle"><span class="step-number">02</span><div><h3>Introduce it to the world.</h3><p>Live virtual expos and five-minute Business Spotlights—recorded in your own space or presented live—followed by live Q&amp;A.</p></div></article>
           <article class="principle"><span class="step-number">03</span><div><h3>Keep the door open.</h3><p>Saved companies, meeting requests, ongoing conversations, and replays after the event.</p></div></article>
         </div>
       </div>
@@ -156,9 +157,9 @@
           <div class="expo-layout">
             <div class="expo-stage">
               <div class="stage-overlay"></div>
-              <div class="stage-heading"><span class="stage-tag">Business Spotlight</span><span class="stage-duration">5-minute format</span></div>
-              <div class="stage-center"><button id="expo-preview" class="play-button" aria-label="Explore the Business Spotlight preview"><svg width="25" height="25" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 4.5v15l12-7.5z"/></svg></button><h3>Meet the company.<br>See the possibility.</h3><p>Explore the spotlight experience</p></div>
-              <div class="stage-bottom"><span class="stage-avatar">N</span><div><strong>Nova Logistics</strong><span>Sample spotlight company</span></div><span class="stage-preview-note">Concept still · Presentation preview</span></div>
+              <div class="stage-heading"><span class="stage-tag" id="stage-tag">Premiere · Recorded Spotlight</span><button type="button" id="spotlight-info" class="stage-info">How Spotlights work</button></div>
+              <div class="stage-center"><button id="expo-preview" class="play-button" aria-label="Play the premiere preview"><svg width="25" height="25" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 4.5v15l12-7.5z"/></svg></button><h3>Meet the company.<br>See the possibility.</h3><p>Play the premiere preview · 5:00, then live Q&amp;A</p></div>
+              <div class="stage-bottom"><span class="stage-avatar">N</span><div><strong>Nova Logistics</strong><span>Sample spotlight company</span></div><span class="stage-preview-note">Uploaded video · Sample still</span></div>
             </div>
             <aside class="expo-sidebar" aria-label="Company details preview"><p class="panel-label">The company behind the stage</p><div id="expo-company-info" aria-live="polite"></div></aside>
           </div>

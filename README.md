@@ -26,7 +26,7 @@ Open http://localhost:3000. The site is plain HTML, CSS, and JavaScript; it need
 - `dist/expos.html` — interactive expo preview.
 - `dist/company.html` — company profile preview.
 - `dist/app.js` — shared interactions, demo profiles, filters, and browser-local behavior.
-- `dist/*.css` — styles; `dist/homepage.css` holds the homepage discovery section (search, industry strip, featured businesses, next-expo preview); `dist/expo-floor.css` holds the Live Expos booth floor.
+- `dist/*.css` — styles; `dist/homepage.css` holds the homepage discovery section (search, industry strip, featured businesses, next-expo preview); `dist/expo-floor.css` holds the Live Expos booth floor; `dist/spotlight.css` holds the Spotlight premiere timeline and Live Q&A panel.
 - `dist/assets/` — BOND logos and photography, including the `industry-*.jpg` tiles.
 - `vercel.json` — Vercel hosting: serves `dist/` as-is, no build step.
 - `ASSET_NOTES.md` — photography provenance and user-selected imagery.
