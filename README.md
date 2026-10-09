@@ -30,7 +30,29 @@ Open http://localhost:3000. The site is plain HTML, CSS, and JavaScript; it need
 - `dist/assets/` — BOND logos and photography, including the `industry-*.jpg` tiles and the `project-*.jpg` sample portfolio photos.
 - `dist/assets/qa/` — synthetic sample voice clips for the Live Q&A tab (see `ASSET_NOTES.md`).
 - Uploaded intro videos and project photos are stored in the visitor's browser (IndexedDB database `bond-demo-media`); profile text stays in `localStorage`.
-- Voice Q&A: a visitor raises a hand, the representative passes the mic (simulated after a short delay in the preview), and the visitor talks with live captions and an on-air banner on the stage. The recording is saved in the same IndexedDB database (`qa-recording:<id>`), and its caption text is stored with the question in `localStorage`. Broadcasting to everyone in the room live requires a live-audio service that has not been chosen yet.
+- Voice Q&A: a visitor raises a hand, the representative passes the mic, and the visitor talks with live captions and an on-air banner on the stage. A copy of the recording is saved in the same IndexedDB database (`qa-recording:<id>`), and its caption text is stored with the question in `localStorage`.
+
+## Live audio (LiveKit)
+
+Live Q&A audio runs on [LiveKit Cloud](https://cloud.livekit.io) (project "BOND", free Build plan: 5,000 participant-minutes a month, hard cap, no charges).
+
+- `api/live-token.js` issues short-lived (2 hour) room passes. Guests can listen and raise a hand but cannot publish audio or data. Representatives get a speaking pass only with the host code.
+- `api/live-mic.js` passes or takes back the mic (host code required), or lets a speaker hand back their own mic (verified against their pass).
+- `api/_lib/live.js` signs LiveKit tokens with Node's `crypto` (no npm dependencies) and calls LiveKit's RoomService.
+- `dist/live-audio.js` connects the browser, plays whoever holds the mic, and sends live captions to the room. It loads `dist/vendor/livekit-client-2.22.3.umd.js` (Apache-2.0, npm integrity verified, served from this site) only when someone joins.
+- Representatives open any expo page with `?host` at the end of the address, go to Live Q&A, and enter the host code to see raised hands, pass or take back the mic, and answer live.
+- Without the API (for example, a static-only server) the page falls back to the recorded preview automatically.
+
+Environment variables (Vercel **Preview** only for now; never commit them): `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `BOND_HOST_CODE` (12+ characters). Local copies live in macOS Keychain under project `bond` (`dev-secret list --project bond`).
+
+Local test without real keys:
+
+```bash
+livekit-server --dev --bind 127.0.0.1
+PORT=3017 LIVEKIT_URL=ws://127.0.0.1:7880 LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=secret BOND_HOST_CODE=local-test-host-code node scripts/dev-server.js
+```
+
+Then open `http://127.0.0.1:3017/expos.html?host` in one tab and `http://127.0.0.1:3017/expos.html` in another.
 - `vercel.json` — Vercel hosting: serves `dist/` as-is, no build step.
 - `ASSET_NOTES.md` — photography provenance and user-selected imagery.
 - `docs/original-site-text-snapshot.txt` — earlier content reference.

@@ -64,8 +64,10 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 - [x] Click the company logo on the video to open the side panel without leaving the video (the video widens during the premiere and keeps playing while the panel is open)
 - [x] Voice Q&A: raise hand, the representative passes the mic, talk with live captions and an on-air banner on the stage; the recording and text are saved to the Q&A list for replay (in this browser)
 - [x] Away representatives: record a voice question to be answered on the replay
-- [!] Everyone in the room hears the speaker live (needs a live-audio service; owner approval of provider and cost)
-- [ ] Representative-side controls to see raised hands and pass or take back the mic (comes with the live-audio service)
+- [x] Everyone in the room hears the speaker live, with live captions (LiveKit, free Build plan; Vercel preview deployments)
+- [x] Representative controls (`?host` + host code): see raised hands, pass or take back the mic, answer live
+- [ ] Live audio on production (owner approval to add the LiveKit variables to Production and deploy)
+- [ ] Representative accounts instead of a shared host code (needs BOND sign-in)
 - [ ] Real video playback and live streaming (needs video hosting)
 
 ## 5. Opportunity Board

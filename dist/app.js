@@ -1392,6 +1392,7 @@
     const container = document.getElementById("expo-company-info");
     if (!container) return;
     activeVoice?.finish();
+    Object.keys(liveSessions).forEach((id) => { if (id !== profile.id) leaveLive(id); });
     currentExpoProfile = profile;
     container.replaceChildren();
     const header = element("div", "expo-panel-header");
@@ -1472,6 +1473,9 @@
   const MAX_VOICE_BYTES = 10 * 1024 * 1024;
   const handState = Object.create(null);
   const handTimers = Object.create(null);
+  const liveSessions = Object.create(null);
+  const hostMode = new URLSearchParams(window.location.search).has("host");
+  let liveUnavailable = !window.BondLive;
   let activeVoice = null;
   let premierePhase = "ready";
   let premiereTimer;
@@ -1558,6 +1562,259 @@
     document.querySelectorAll(`[data-qa-voice="${profile.id}"]`).forEach((block) => renderVoice(profile, block, block.closest(".expo-qa")));
   }
 
+  function visitorName() {
+    const own = profiles.filter((profile) => profile.local).at(-1);
+    if (!own) return "Guest";
+    return own.representative ? `${own.representative} · ${own.name}` : own.name;
+  }
+
+  function liveSession(profile) {
+    return liveSessions[profile.id]?.session || null;
+  }
+
+  function joinLive(profile, options = {}) {
+    if (liveUnavailable) return Promise.resolve(null);
+    const existing = liveSessions[profile.id];
+    if (existing?.session) return Promise.resolve(existing.session);
+    if (existing?.joining) return existing.joining;
+    const entry = { session: null, state: null, joining: null, hostCode: "", releasing: false, hostKey: "" };
+    liveSessions[profile.id] = entry;
+    entry.joining = window.BondLive.join({
+      profileId: profile.id,
+      name: options.name || visitorName(),
+      role: options.role || "guest",
+      hostCode: options.hostCode,
+      onChange: (state) => onLiveChange(profile, entry, state),
+    }).then((session) => {
+      entry.session = session;
+      entry.joining = null;
+      if (options.role === "host") entry.hostCode = options.hostCode;
+      if (liveSessions[profile.id] !== entry) {
+        session.leave();
+        return null;
+      }
+      return session;
+    }, (error) => {
+      if (liveSessions[profile.id] === entry) delete liveSessions[profile.id];
+      if (error.unavailable) liveUnavailable = true;
+      throw error;
+    });
+    return entry.joining;
+  }
+
+  function leaveLive(profileId) {
+    const entry = liveSessions[profileId];
+    if (!entry) return;
+    delete liveSessions[profileId];
+    entry.hostMic?.stop();
+    entry.session?.leave();
+    delete handState[profileId];
+    document.querySelectorAll(`.stage-onair.is-remote[data-live="${profileId}"]`).forEach((node) => node.remove());
+  }
+
+  function onLiveChange(profile, entry, state) {
+    const previous = entry.state;
+    entry.state = state;
+    if (liveSessions[profile.id] !== entry) return;
+    const rep = profile.representative || "The representative";
+    if (!state.connected && previous?.connected) {
+      if (activeVoice?.profileId === profile.id && activeVoice.live) activeVoice.finish();
+      leaveLive(profile.id);
+      refreshVoice(profile);
+      refreshHostControls(profile);
+      announce("Live audio disconnected.");
+      return;
+    }
+    if (state.role === "guest") {
+      if (state.canPublish && !previous?.canPublish) {
+        handState[profile.id] = "mic";
+        refreshVoice(profile);
+        announce(`${rep} passed you the mic. Tap Start talking.`);
+      } else if (!state.canPublish && previous?.canPublish) {
+        const self = entry.releasing;
+        entry.releasing = false;
+        if (activeVoice?.profileId === profile.id && activeVoice.live) activeVoice.finish();
+        else if (!self) {
+          delete handState[profile.id];
+          refreshVoice(profile);
+        }
+        if (!self) announce(`${rep} took back the mic.`);
+      } else if (!previous || previous.hostPresent !== state.hostPresent) refreshVoice(profile);
+    }
+    updateLiveRoom(profile, state);
+    const hostKey = JSON.stringify([state.connected, state.listeners, state.people.map((person) => [person.identity, person.hand, person.live])]);
+    if (hostKey !== entry.hostKey) {
+      entry.hostKey = hostKey;
+      refreshHostControls(profile);
+    }
+  }
+
+  function updateLiveRoom(profile, state) {
+    const rep = profile.representative || "the representative";
+    const room = state.connected
+      ? `Live audio · ${state.listeners} in the room${state.hostPresent ? ` · ${rep} is here` : ` · Waiting for ${rep}`}`
+      : "";
+    const speaker = state.speakers[0];
+    const speakerLabel = speaker ? `${speaker.name} (${speaker.role === "host" ? "representative" : "guest"})` : "";
+    document.querySelectorAll(`[data-qa-room="${profile.id}"]`).forEach((node) => { node.textContent = room; });
+    document.querySelectorAll(`[data-qa-speaker="${profile.id}"]`).forEach((node) => {
+      node.hidden = !speaker;
+      node.textContent = speaker ? `Now speaking: ${speakerLabel}${speaker.caption ? ` — “${speaker.caption}”` : ""}` : "";
+    });
+    if (profile.id !== STAGE_COMPANY_ID) return;
+    const stage = document.querySelector(".expo-stage");
+    let banner = stage?.querySelector(".stage-onair.is-remote");
+    if (!speaker || !stage) {
+      banner?.remove();
+      return;
+    }
+    if (!banner) {
+      banner = element("div", "stage-onair is-remote");
+      banner.dataset.live = profile.id;
+      banner.setAttribute("aria-hidden", "true");
+      banner.append(element("span", "stage-onair-tag"), element("p", "stage-onair-caption"));
+      stage.append(banner);
+    }
+    banner.querySelector(".stage-onair-tag").textContent = `On air · ${speakerLabel}`;
+    banner.querySelector(".stage-onair-caption").textContent = speaker.caption || "Speaking…";
+  }
+
+  function refreshHostControls(profile) {
+    document.querySelectorAll(`[data-qa-host="${profile.id}"]`).forEach((block) => renderHostControls(profile, block));
+  }
+
+  function startHostMic(profile, entry, status) {
+    return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }).then(async (stream) => {
+      if (!(await entry.session.publishMic(stream))) {
+        stream.getTracks().forEach((track) => track.stop());
+        status.textContent = "Your mic couldn't be broadcast. Try again.";
+        return;
+      }
+      const captions = startCaptions((text) => entry.session.sendCaption(text));
+      entry.hostMic = {
+        stop() {
+          captions?.stop();
+          entry.session?.unpublishMic();
+          stream.getTracks().forEach((track) => track.stop());
+          entry.hostMic = null;
+        },
+      };
+      renderHostControls(profile, status.closest("[data-qa-host]"));
+    }, () => {
+      status.textContent = "Microphone access was blocked. Allow the microphone for this site.";
+    });
+  }
+
+  function renderHostControls(profile, block) {
+    if (!block) return;
+    const focusedKey = block.contains(document.activeElement) ? document.activeElement.dataset.hostKey : null;
+    block.replaceChildren(element("h5", "qa-voice-title", "Representative controls"));
+    const status = element("p", "qa-voice-status");
+    status.setAttribute("role", "status");
+    const entry = liveSessions[profile.id];
+    if (liveUnavailable) {
+      status.textContent = "Live audio isn't configured on this deployment.";
+      block.append(status);
+      return;
+    }
+    if (!entry?.session || entry.session.role !== "host") {
+      if (entry?.session) {
+        status.textContent = "You joined as a guest. Leave live audio, then open the room as the representative.";
+        block.append(status);
+        return;
+      }
+      const form = element("form", "qa-host-form");
+      const nameId = `host-name-${profile.id}-${++chatSequence}`;
+      const codeId = `host-code-${profile.id}-${chatSequence}`;
+      const nameLabel = element("label", "chat-label", "Your name, shown to the room");
+      nameLabel.htmlFor = nameId;
+      const nameInput = element("input", "chat-input");
+      nameInput.id = nameId;
+      nameInput.maxLength = 40;
+      nameInput.value = profile.representative || "";
+      const codeLabel = element("label", "chat-label", "Host code");
+      codeLabel.htmlFor = codeId;
+      const codeInput = element("input", "chat-input");
+      codeInput.id = codeId;
+      codeInput.type = "password";
+      codeInput.required = true;
+      codeInput.autocomplete = "off";
+      const open = element("button", "button button-primary", "Open the room");
+      open.type = "submit";
+      status.textContent = "Open the room to see raised hands and pass the mic.";
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        open.disabled = true;
+        status.textContent = "Connecting…";
+        joinLive(profile, { role: "host", name: nameInput.value, hostCode: codeInput.value }).then(() => {
+          refreshVoice(profile);
+          refreshHostControls(profile);
+          block.querySelector("button")?.focus();
+        }, (error) => {
+          open.disabled = false;
+          status.textContent = error.message;
+          codeInput.select();
+        });
+      });
+      form.append(nameLabel, nameInput, codeLabel, codeInput, open);
+      block.append(status, form);
+      return;
+    }
+    const state = entry.state || entry.session.snapshot();
+    const guests = state.people.filter((person) => person.role === "guest")
+      .sort((a, b) => (b.hand === "mic") - (a.hand === "mic") || (b.hand === "raised") - (a.hand === "raised"));
+    const raised = guests.filter((person) => person.hand === "raised").length;
+    status.textContent = `You're in the room. ${guests.length} ${guests.length === 1 ? "guest" : "guests"} listening${raised ? ` · ${raised} ${raised === 1 ? "hand" : "hands"} raised` : ""}.`;
+    const actions = element("div", "qa-voice-actions");
+    const mic = element("button", `button ${entry.hostMic ? "button-secondary" : "button-primary qa-mic"}`, entry.hostMic ? "Mute my mic" : "Answer live");
+    mic.type = "button";
+    mic.dataset.hostKey = "mic";
+    mic.addEventListener("click", () => {
+      if (entry.hostMic) {
+        entry.hostMic.stop();
+        renderHostControls(profile, block);
+        block.querySelector('[data-host-key="mic"]')?.focus();
+      } else startHostMic(profile, entry, status);
+    });
+    const leave = element("button", "button button-secondary", "Close the room");
+    leave.type = "button";
+    leave.dataset.hostKey = "leave";
+    leave.addEventListener("click", () => {
+      leaveLive(profile.id);
+      refreshVoice(profile);
+      renderHostControls(profile, block);
+    });
+    actions.append(mic, leave);
+    block.append(status, actions);
+    if (guests.length) {
+      const list = element("ul", "qa-host-list");
+      for (const guest of guests) {
+        const item = element("li", "qa-host-guest");
+        const label = guest.hand === "mic" ? (guest.live ? "Talking now" : "Has the mic") : guest.hand === "raised" ? "Hand raised" : "Listening";
+        item.append(element("span", "qa-host-name", guest.name), element("span", `qa-host-state is-${guest.hand || "listening"}`, label));
+        if (guest.hand === "raised" || guest.hand === "mic") {
+          const passing = guest.hand === "raised";
+          const button = element("button", `button ${passing ? "button-primary" : "button-secondary"}`, passing ? "Pass the mic" : "Take back the mic");
+          button.type = "button";
+          button.dataset.hostKey = `guest-${guest.identity}`;
+          button.setAttribute("aria-label", `${passing ? "Pass the mic to" : "Take back the mic from"} ${guest.name}`);
+          button.addEventListener("click", () => {
+            button.disabled = true;
+            (passing ? entry.session.grant(guest.identity, entry.hostCode) : entry.session.revoke(guest.identity, entry.hostCode))
+              .catch((error) => {
+                button.disabled = false;
+                status.textContent = error.message;
+              });
+          });
+          item.append(button);
+        }
+        list.append(item);
+      }
+      block.append(list);
+    }
+    if (focusedKey) block.querySelector(`[data-host-key="${CSS.escape(focusedKey)}"]`)?.focus();
+  }
+
   function renderVoice(profile, block, qaContainer) {
     block.replaceChildren();
     const rep = profile.representative || "the representative";
@@ -1580,18 +1837,24 @@
       actions.append(record);
     } else if (state === "raised") {
       const waiting = profile.id === STAGE_COMPANY_ID && premierePhase === "premiere";
-      status.textContent = waiting ? `Hand raised. ${rep} will pass you the mic when the premiere ends.` : `Hand raised. You're next in line for ${rep}.`;
+      const liveState = liveSessions[profile.id]?.state;
+      status.textContent = liveState
+        ? (liveState.hostPresent ? `Hand raised. ${rep} can see it and will pass you the mic.` : `Hand raised. ${rep} isn't in the room yet and will see your hand on arrival.`)
+        : waiting ? `Hand raised. ${rep} will pass you the mic when the premiere ends.` : `Hand raised. You're next in line for ${rep}.`;
       const lower = element("button", "button button-secondary", "Lower hand");
       lower.type = "button";
       lower.addEventListener("click", () => {
         clearTimeout(handTimers[profile.id]);
         delete handState[profile.id];
+        liveSession(profile)?.setHand("");
         renderVoice(profile, block, qaContainer);
         block.querySelector("button")?.focus();
       });
       actions.append(lower);
     } else if (state === "mic") {
-      status.textContent = `${rep} passed you the mic. Everyone in the room will hear you as you talk.`;
+      status.textContent = liveSession(profile)
+        ? `${rep} passed you the mic. Everyone in the room will hear you as you talk.`
+        : `${rep} passed you the mic. In this preview your question is recorded, not broadcast.`;
       const talk = element("button", "button button-primary qa-mic", "Start talking");
       talk.type = "button";
       talk.addEventListener("click", () => startTalking(profile, block, qaContainer, true));
@@ -1599,6 +1862,11 @@
       pass.type = "button";
       pass.addEventListener("click", () => {
         delete handState[profile.id];
+        const entry = liveSessions[profile.id];
+        if (entry?.session) {
+          entry.releasing = true;
+          entry.session.release();
+        }
         renderVoice(profile, block, qaContainer);
         block.querySelector("button")?.focus();
       });
@@ -1607,15 +1875,68 @@
       status.textContent = `Raise your hand and ${rep} passes you the mic. Your words appear as text while you talk.`;
       const raise = element("button", "button button-primary qa-raise", "Raise hand to speak");
       raise.type = "button";
-      raise.addEventListener("click", () => {
+      raise.addEventListener("click", async () => {
         handState[profile.id] = "raised";
-        grantMicLater(profile);
         renderVoice(profile, block, qaContainer);
         block.querySelector("button")?.focus();
+        const result = await joinLive(profile).catch((error) => error);
+        if (handState[profile.id] !== "raised") return;
+        if (result && !(result instanceof Error)) {
+          result.setHand("raised");
+        } else if (!result || result.unavailable) {
+          grantMicLater(profile);
+        } else {
+          delete handState[profile.id];
+          renderVoice(profile, block, qaContainer);
+          const nextStatus = block.querySelector(".qa-voice-status");
+          if (nextStatus) nextStatus.textContent = result.message;
+        }
+        refreshVoice(profile);
       });
       actions.append(raise);
+      if (!liveUnavailable) {
+        const connected = Boolean(liveSession(profile));
+        const listen = element("button", "button button-secondary", connected ? "Leave live audio" : "Listen live");
+        listen.type = "button";
+        listen.addEventListener("click", () => {
+          if (connected) {
+            leaveLive(profile.id);
+            refreshVoice(profile);
+            refreshHostControls(profile);
+            block.querySelector("button")?.focus();
+            return;
+          }
+          listen.disabled = true;
+          status.textContent = "Connecting to live audio…";
+          joinLive(profile).then((session) => {
+            if (!session) status.textContent = "Live audio isn't available in this preview.";
+            refreshVoice(profile);
+            refreshHostControls(profile);
+          }, (error) => {
+            listen.disabled = false;
+            status.textContent = error.message;
+            if (error.unavailable) refreshVoice(profile);
+          });
+        });
+        actions.append(listen);
+      }
     }
-    block.append(status, actions, element("p", "qa-voice-note", "Preview: your voice is recorded in this browser only. Broadcasting it live to everyone in the room needs a live-audio service, which is planned. Live captions use your browser's speech recognition, which may send audio to the browser maker (for example, Google in Chrome)."));
+    block.append(status, actions);
+    const entry = liveSessions[profile.id];
+    if (entry?.session) {
+      const room = element("p", "qa-live-room");
+      room.dataset.qaRoom = profile.id;
+      const speaker = element("p", "qa-live-speaker");
+      speaker.dataset.qaSpeaker = profile.id;
+      speaker.setAttribute("aria-live", "polite");
+      speaker.hidden = true;
+      block.append(room, speaker);
+      if (entry.state) queueMicrotask(() => updateLiveRoom(profile, entry.state));
+    }
+    const captionNote = "Live captions use your browser's speech recognition, which may send audio to the browser maker (for example, Google in Chrome).";
+    block.append(element("p", "qa-voice-note", liveUnavailable
+      ? `Preview: your voice is recorded in this browser only. Live broadcast to the room isn't connected on this deployment. ${captionNote}`
+      : `Live: while you have the mic, everyone listening in this room hears you. A copy of your question and its text is also saved in this browser. ${captionNote}`));
   }
 
   async function startTalking(profile, block, qaContainer, live) {
@@ -1635,12 +1956,14 @@
       return;
     }
     const recorder = new MediaRecorder(stream, mimeType ? { mimeType, audioBitsPerSecond: 64000 } : undefined);
+    const liveEntry = live ? liveSessions[profile.id] : null;
+    const broadcasting = Boolean(liveEntry?.session && liveEntry.state?.canPublish && await liveEntry.session.publishMic(stream));
     const chunks = [];
     const started = performance.now();
     let transcript = "";
     block.replaceChildren();
     block.classList.add("is-live");
-    const onAir = element("p", "qa-onair", live ? "On air" : "Recording");
+    const onAir = element("p", "qa-onair", broadcasting ? "On air · Everyone hears you" : live ? "On air" : "Recording");
     const meter = element("div", "qa-meter");
     const meterFill = element("span", "qa-meter-fill");
     meter.append(meterFill);
@@ -1666,6 +1989,7 @@
     }
     const captions = startCaptions((text) => {
       transcript = text;
+      if (broadcasting) liveEntry.session.sendCaption(text);
       caption.textContent = text || "Listening…";
       if (bannerCaption) bannerCaption.textContent = text || "Listening…";
     });
@@ -1704,6 +2028,13 @@
       transcript = captions?.text() || transcript;
       done.disabled = true;
       done.textContent = "Saving…";
+      if (liveEntry?.session && liveSessions[profile.id] === liveEntry) {
+        liveEntry.session.unpublishMic();
+        if (liveEntry.state?.canPublish) {
+          liveEntry.releasing = true;
+          liveEntry.session.release();
+        }
+      }
       recorder.addEventListener("stop", async () => {
         stream.getTracks().forEach((track) => track.stop());
         audioContext?.close().catch(() => {});
@@ -1732,7 +2063,7 @@
       else recorder.dispatchEvent(new Event("stop"));
     }
     done.addEventListener("click", finish);
-    activeVoice = { profileId: profile.id, finish };
+    activeVoice = { profileId: profile.id, finish, live: broadcasting };
     recorder.start(1000);
   }
 
@@ -1790,6 +2121,12 @@
     voice.dataset.qaVoice = profile.id;
     container.append(voice);
     renderVoice(profile, voice, container);
+    if (hostMode && presenceOf(profile) !== "away") {
+      const host = element("div", "qa-voice qa-host");
+      host.dataset.qaHost = profile.id;
+      container.append(host);
+      renderHostControls(profile, host);
+    }
     const form = element("form", "chat-form qa-form");
     const inputId = `qa-question-${profile.id}-${++chatSequence}`;
     const label = element("label", "chat-label", "Or type your question");
@@ -2456,6 +2793,19 @@
     const firstExpoProfile = expoButtons.length ? resolveProfile(expoButtons[0].dataset.expoCompany || expoButtons[0].dataset.company) : sampleProfiles[0];
     if (firstExpoProfile) renderExpoPanel(firstExpoProfile);
     setupStageCompany();
+    if (!liveUnavailable && document.getElementById("expo-company-info")) {
+      fetch("/api/live-token", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+        .then((response) => response.status !== 400, () => true)
+        .then((unavailable) => {
+          if (!unavailable || liveUnavailable) return;
+          liveUnavailable = true;
+          if (currentExpoProfile) {
+            refreshVoice(currentExpoProfile);
+            refreshHostControls(currentExpoProfile);
+          }
+        });
+      window.addEventListener("pagehide", () => Object.keys(liveSessions).forEach(leaveLive));
+    }
     document.getElementById("expo-preview")?.addEventListener("click", runPremiere);
     document.getElementById("spotlight-info")?.addEventListener("click", (event) => showSpotlight(event.currentTarget));
     document.querySelectorAll("[data-replay], button#expo-replay").forEach((button) => {
