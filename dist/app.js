@@ -1021,7 +1021,9 @@
       textarea.focus();
       status.textContent = persisted ? "Demo message saved in this browser." : "Demo message saved for this visit; browser storage is unavailable.";
     });
-    form.append(label, textarea, send, status);
+    const actions = element("div", "chat-actions");
+    actions.append(send, dictationButton(textarea, status));
+    form.append(label, textarea, actions, status);
     container.append(thread, form);
   }
 
@@ -1513,7 +1515,7 @@
     return ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"].find((type) => MediaRecorder.isTypeSupported(type)) || "";
   }
 
-  function startCaptions(onText) {
+  function startCaptions(onText, onStop) {
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Recognition) return null;
     const recognition = new Recognition();
@@ -1537,11 +1539,58 @@
       if (["not-allowed", "service-not-allowed", "audio-capture", "network"].includes(event.error)) active = false;
     };
     recognition.onend = () => {
-      if (!active) return;
-      try { recognition.start(); } catch { active = false; }
+      if (active) {
+        try { recognition.start(); return; } catch { active = false; }
+      }
+      if (onStop) onStop();
     };
     try { recognition.start(); } catch { return null; }
     return { stop: () => { active = false; try { recognition.stop(); } catch { /* already stopped */ } }, text: () => latest };
+  }
+
+  function dictationButton(textarea, status) {
+    const button = element("button", "button button-secondary qa-mic chat-dictate", "Speak");
+    button.type = "button";
+    button.setAttribute("aria-label", "Speak your message");
+    button.setAttribute("aria-pressed", "false");
+    let session = null;
+    const reset = () => {
+      session = null;
+      button.textContent = "Speak";
+      button.setAttribute("aria-pressed", "false");
+      button.classList.remove("is-listening");
+    };
+    button.addEventListener("click", () => {
+      if (session) {
+        session.stop();
+        reset();
+        status.textContent = textarea.value.trim() ? "Done listening. Check the text, then send." : "Didn't catch anything. Tap Speak to try again.";
+        return;
+      }
+      const base = textarea.value.trim();
+      textarea.form?.addEventListener("submit", () => {
+        if (session) session.stop();
+        reset();
+      }, { once: true });
+      session = startCaptions((text) => {
+        if (!session) return;
+        textarea.value = `${base ? `${base} ` : ""}${text}`.slice(0, textarea.maxLength);
+        textarea.setCustomValidity("");
+      }, () => {
+        if (!session) return;
+        reset();
+        status.textContent = textarea.value.trim() ? "Done listening. Check the text, then send." : "The microphone stopped. Check browser permission, then tap Speak again.";
+      });
+      if (!session) {
+        status.textContent = "Voice typing isn't available in this browser. Try Chrome, Edge, or Safari, or type your message.";
+        return;
+      }
+      button.textContent = "Stop";
+      button.setAttribute("aria-pressed", "true");
+      button.classList.add("is-listening");
+      status.textContent = "Listening… speak now. Your words appear in the box. Your browser's speech service may process the audio.";
+    });
+    return button;
   }
 
   function grantMicLater(profile) {
@@ -2167,7 +2216,9 @@
       const nextStatus = container.querySelector(".chat-status");
       if (nextStatus) nextStatus.textContent = persisted ? "Question added. In this preview it is saved only in this browser." : "Question added for this visit; browser storage is unavailable.";
     });
-    form.append(label, textarea, submit, formStatus);
+    const actions = element("div", "chat-actions");
+    actions.append(submit, dictationButton(textarea, formStatus));
+    form.append(label, textarea, actions, formStatus);
     container.append(form, asked);
   }
 
