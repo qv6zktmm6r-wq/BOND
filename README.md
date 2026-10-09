@@ -1,6 +1,7 @@
 # BOND — Business Opportunity Network & Discovery
 
-**Website:** https://joinbond.mejia1604.chatgpt.site  
+**Hosting:** Vercel (project `bond`, static files from `dist/`)  
+**Original site:** https://joinbond.mejia1604.chatgpt.site (ChatGPT Sites; retire after the Vercel site is live)  
 **GitHub repository:** https://github.com/qv6zktmm6r-wq/BOND  
 **Tagline:** Where businesses connect.
 
@@ -26,21 +27,23 @@ Open http://localhost:3000. The site is plain HTML, CSS, and JavaScript; it need
 - `dist/app.js` — shared interactions, demo profiles, filters, and browser-local behavior.
 - `dist/*.css` — original styles.
 - `dist/assets/` — original BOND logos and photography.
-- `.openai/hosting.json` — original ChatGPT Sites project identity and static directory.
+- `vercel.json` — Vercel hosting: serves `dist/` as-is, no build step.
 - `ASSET_NOTES.md` — photography provenance and user-selected imagery.
 - `docs/original-site-text-snapshot.txt` — earlier content reference.
 
 ## Hosting and current behavior
 
-The existing site remains hosted at https://joinbond.mejia1604.chatgpt.site. Importing its source into GitHub does not change its hosting, URL, or access settings. GitHub pushes do not automatically publish to ChatGPT Sites; publication requires the Sites workflow for the existing project.
+BOND is hosted on Vercel. The repository is no longer linked to ChatGPT Sites (the `.openai/hosting.json` project file was removed). The original ChatGPT Site at https://joinbond.mejia1604.chatgpt.site stays up until it is unpublished from the ChatGPT account; do that only after the Vercel site is live.
+
+Once BOND has its final address, update the `og:url` and `og:image` tags in `dist/index.html`, `dist/expos.html`, and `dist/company.html`, which still point at the original ChatGPT Site.
 
 The current implementation is an interactive static prototype with fictional demo companies and browser-local behavior. Real shared accounts, persistent messaging, and live broadcasting still require backend implementation.
 
-Original routes:
+Routes:
 
-- Homepage: https://joinbond.mejia1604.chatgpt.site/
-- Live expo preview: https://joinbond.mejia1604.chatgpt.site/expos.html
-- Company profile preview: https://joinbond.mejia1604.chatgpt.site/company.html?id=nova
+- Homepage: `/`
+- Live expo preview: `/expos.html`
+- Company profile preview: `/company.html?id=nova`
 
 ## Brand decisions
 
@@ -61,7 +64,7 @@ Original routes:
 6. Add company dashboards and private networking.
 7. Build **AI Opportunity Rooms** for capability-based matching, teaming introductions, and opportunity collaboration.
 
-Develop improvements on a feature branch, verify the original routes and assets, and publish through the existing Site project.
+Develop improvements on a feature branch, verify the routes and assets on its Vercel preview, then publish by deploying to Vercel production.
 
 ## Export verification
 
