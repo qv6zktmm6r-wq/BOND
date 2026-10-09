@@ -1,50 +1,72 @@
 # BOND — Business Opportunity Network & Discovery
 
-**Existing BOND Site:** https://joinbond.mejia1604.chatgpt.site  
-**Existing GitHub repository:** https://github.com/qv6zktmm6r-wq/BOND  
-**Working tagline:** Where businesses connect.
+**Website:** https://joinbond.mejia1604.chatgpt.site  
+**GitHub repository:** https://github.com/qv6zktmm6r-wq/BOND  
+**Tagline:** Where businesses connect.
 
-## Important: preserve the existing website
+This repository contains the original BOND website source and image assets exported from its existing ChatGPT Sites project on October 9, 2026. The export matches saved Site version 5, source commit `92bb394e8ad61fcbb605a93c26c3146727514222`. All 18 original tracked files were copied byte-for-byte.
 
-BOND is an **existing published ChatGPT Site**, not a new website to rebuild. This repository is intended to become its version-controlled source repository. The original Sites implementation has **not yet been exported** to GitHub; this repository does **not** currently contain the original site's runnable source code.
+## Open and run locally
 
-**Do not create a replacement ChatGPT Site or redirect its existing URL.** Do not replace the production website with a reconstruction made from the text snapshot here.
+Clone this repository and open the folder in Cursor:
 
-## Original site locations
+```bash
+git clone https://github.com/qv6zktmm6r-wq/BOND.git
+cd BOND
+python3 -m http.server 3000 --directory dist
+```
+
+Open http://localhost:3000. The site is plain HTML, CSS, and JavaScript; it needs no dependency installation or build step. To stop the local server, press Ctrl+C.
+
+## Project files
+
+- `dist/index.html` — homepage and business discovery.
+- `dist/expos.html` — interactive expo preview.
+- `dist/company.html` — company profile preview.
+- `dist/app.js` — shared interactions, demo profiles, filters, and browser-local behavior.
+- `dist/*.css` — original styles.
+- `dist/assets/` — original BOND logos and photography.
+- `.openai/hosting.json` — original ChatGPT Sites project identity and static directory.
+- `ASSET_NOTES.md` — photography provenance and user-selected imagery.
+- `docs/original-site-text-snapshot.txt` — earlier content reference.
+
+## Hosting and current behavior
+
+The existing site remains hosted at https://joinbond.mejia1604.chatgpt.site. Importing its source into GitHub does not change its hosting, URL, or access settings. GitHub pushes do not automatically publish to ChatGPT Sites; publication requires the Sites workflow for the existing project.
+
+The current implementation is an interactive static prototype with fictional demo companies and browser-local behavior. Real shared accounts, persistent messaging, and live broadcasting still require backend implementation.
+
+Original routes:
 
 - Homepage: https://joinbond.mejia1604.chatgpt.site/
 - Live expo preview: https://joinbond.mejia1604.chatgpt.site/expos.html
 - Company profile preview: https://joinbond.mejia1604.chatgpt.site/company.html?id=nova
 
-The current original site includes a company discovery section, eight clearly labeled fictional demo business profiles, category/location/community filters, an interactive business spotlight presentation preview with in-place company profile and demo chat, opportunities examples, and trust messaging distinguishing self-reported ownership from certification.
+## Brand decisions
 
-The site's text inventory is backed up in [docs/original-site-text-snapshot.txt](docs/original-site-text-snapshot.txt). **That document is a content reference, not source code or a working site export.**
+- Brand: **BOND** (Business Opportunity Network & Discovery).
+- Identity: preserve the existing integrated BOND logo and wordmark.
+- Colors: midnight `#060D1B`, cobalt `#0057FF`, cyan `#00A8FF`, white `#FFFFFF`, deep surface `#111D30`, muted `#A3B3CC`.
+- Positioning: permanent company-first business network with live expos.
+- Tone: confident, practical, welcoming; clear distinctions between demos, real accounts, self-reported ownership, and certification.
+- Imagery: representative business owners across industries and backgrounds.
 
-## Preserve these BOND brand decisions
+## Planned improvements
 
-- Brand: **BOND** (Business Opportunity Network & Discovery)
-- Identity: existing integrated BOND logo / wordmark, not a redrawn or retyped replacement
-- Colors: midnight `#060D1B`, cobalt `#0057FF`, cyan `#00A8FF`, white `#FFFFFF`, deep surface `#111D30`, muted `#A3B3CC`
-- Positioning: permanent company-first business network with live expos
-- Tone: confident, practical, welcoming; candid differentiation between demos and real accounts / certifications
-- Diversity: authentic representative imagery across industries and backgrounds
-
-## Planned enhancements — additive, not a rebuild
-
-1. Improve the current homepage hero, searchable industries, featured profiles and expo preview.
+1. Improve the current homepage hero, searchable industries, featured profiles, and expo preview.
 2. Expand searchable business discovery with useful filters.
-3. Expand company profiles with branding, video, services, work portfolios, representatives, contact controls and certification status.
-4. Build live expos with on-stage company spotlights, clickable company profile side panels, private chat and Q&A without leaving the presentation.
+3. Expand company profiles with branding, video, services, portfolios, representatives, contact controls, and certification status.
+4. Build live expos with company spotlights, clickable profile panels, private chat, and Q&A within the presentation.
 5. Build an opportunity board and company activity feed.
 6. Add company dashboards and private networking.
-7. Build **AI Opportunity Rooms** for capability-based matching, teaming introductions and opportunity collaboration.
+7. Build **AI Opportunity Rooms** for capability-based matching, teaming introductions, and opportunity collaboration.
 
-## Original-source migration checklist
+Develop improvements on a feature branch, verify the original routes and assets, and publish through the existing Site project.
 
-- [ ] Retrieve the **actual project files** of the published BOND Site, without creating a replacement site.
-- [ ] Confirm design, assets, routes, content and interactive behavior against the original published version.
-- [ ] Commit those actual files to this repository; keep original assets and editable source intact.
-- [ ] Develop improvements on a feature branch and test preview behavior.
-- [ ] Deploy **only after** verifying that the original site's identity, routes and working behavior are retained.
+## Export verification
 
-*Baseline repository notes added on 2026-10-09. The original ChatGPT Site remains the authoritative deployed version until source migration is complete.*
+- Original source commit matches saved Site version 5.
+- All original file hashes match their imported GitHub blobs.
+- JavaScript syntax check passed with `node --check dist/app.js`.
+- Local HTML and CSS asset references resolve.
+- Browser behavior was not retested during this source-only transfer.

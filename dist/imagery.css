@@ -1,0 +1,23 @@
+/* BOND's people and business moments, framed within its midnight palette. */
+.section-heading-with-photo{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:64px;align-items:center;margin-bottom:40px}
+.section-heading-with-photo .section-side-copy{max-width:440px;margin-top:22px;padding-bottom:0}
+.section-photo{position:relative;aspect-ratio:3/2;margin:0;overflow:hidden;border:1px solid rgba(163,179,204,.25);border-radius:16px;background:#111D30;box-shadow:0 18px 45px rgba(0,0,0,.14)}
+.section-photo img{display:block;width:100%;height:100%;object-fit:cover}
+.directory-photo img{object-position:78% center}
+.collaboration-photo img{object-position:center center}
+.section-photo::after{content:'';position:absolute;inset:45% 0 0;background:linear-gradient(transparent,rgba(6,13,27,.86));pointer-events:none}
+.section-photo figcaption{position:absolute;left:19px;right:19px;bottom:17px;z-index:1;font-size:11px;line-height:1.5;font-weight:500;color:#F2F6FC}
+.section-photo figcaption small{display:block;font-size:8px;letter-spacing:.3px;color:#C0CFE4;margin-top:4px;font-weight:400}
+.opportunity-grid .opportunity-thumbnail{display:block;width:100%;height:88px;object-fit:cover;object-position:center 48%;border:1px solid rgba(163,179,204,.2);border-radius:8px;margin-bottom:20px}
+.opportunity-grid .opportunity-thumbnail-partner{object-position:48% 55%}
+.opportunity-grid .opportunity-thumbnail-service{object-position:center 70%}
+.opportunity-grid .opportunity-thumbnail-collaboration{object-position:center 28%}
+.expo-stage{background-image:url('assets/spotlight-selected.png');background-position:center;background-size:cover}
+.expo-stage .stage-overlay{background:linear-gradient(90deg,rgba(6,13,27,.86),rgba(6,13,27,.51) 60%,rgba(6,13,27,.27)),linear-gradient(0deg,rgba(6,13,27,.82),transparent 45%)}
+.expo-stage .stage-center{align-self:flex-start;max-width:60%;padding-right:12px}
+.expo-stage .stage-center h3{font-size:32px;line-height:1.16}
+.expo-stage .stage-preview-note{max-width:155px;text-align:right;line-height:1.5}
+@media(max-width:1100px){.section-heading-with-photo{grid-template-columns:minmax(0,1fr) 300px;gap:36px}.section-photo figcaption{font-size:10px}.expo-stage .stage-center h3{font-size:28px}}
+@media(max-width:900px){.section-heading-with-photo{grid-template-columns:1fr;gap:27px}.section-photo{width:100%;max-width:520px;aspect-ratio:2/1}.section-heading-with-photo .section-side-copy{margin-top:18px}}
+@media(max-width:760px){.section-heading-with-photo{margin-bottom:32px}.section-photo{max-width:none;aspect-ratio:16/9;border-radius:13px}.section-photo figcaption{left:17px;right:17px;bottom:15px;font-size:11px}.section-photo figcaption small{font-size:8px}.opportunity-grid .opportunity-thumbnail{height:88px;margin-bottom:19px}.expo-stage{background-position:70% center}.expo-stage .stage-center{max-width:65%;padding-right:0}.expo-stage .stage-center h3{font-size:26px}.expo-stage .stage-center p{font-size:11px}.expo-stage .stage-preview-note{max-width:115px;font-size:8px}}
+@media(max-width:380px){.expo-stage .stage-center{max-width:70%}.expo-stage .stage-center h3{font-size:24px}.expo-stage .stage-preview-note{max-width:85px}}

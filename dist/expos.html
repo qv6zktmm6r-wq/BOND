@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#060D1B">
+  <title>BOND Live Expos — The introduction is only the beginning.</title>
+  <meta name="description" content="Discover BOND, a business-first network for company profiles, live expos, and lasting connections. Explore the design preview.">
+  <meta property="og:title" content="BOND Live Expos — The introduction is only the beginning.">
+  <meta property="og:description" content="A permanent home for business connections and live discovery.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://joinbond.mejia1604.chatgpt.site/expos.html">
+  <meta property="og:image" content="https://joinbond.mejia1604.chatgpt.site/assets/expo-hero.png">
+  <link rel="icon" href="assets/bond-symbol.png" type="image/png">
+  <link rel="preload" href="assets/expo-hero.png" as="image">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="enhancements.css">
+  <link rel="stylesheet" href="profiles.css">
+  <link rel="stylesheet" href="imagery.css">
+  <script src="app.js" defer></script>
+</head>
+<body class="expo-page">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="header-brand-lockup" href="index.html" aria-label="BOND — Business Opportunity Network and Discovery"><span class="brand"><img src="assets/bond-wordmark.png" alt="BOND" width="2022" height="778"></span><span class="brand-expansion">Business Opportunity Network &amp; Discovery</span></a>
+      <button id="menu-toggle" class="menu-toggle" aria-label="Open navigation" aria-controls="nav-links" aria-expanded="false"><span></span><span></span></button>
+      <nav id="nav-links" aria-label="Main navigation">
+        <a href="index.html#businesses">Businesses</a>
+        <a href="expos.html" aria-current="page">Live expos</a>
+        <a href="index.html#opportunities">Opportunities</a>
+        <a href="index.html#about">About BOND</a>
+        <button class="button button-primary button-small" data-open-join>Join BOND <span aria-hidden="true">↗</span></button>
+      </nav>
+    </div>
+  </header>
+  <main id="main">
+    <section id="expo-home" class="hero expo-photo-hero" aria-labelledby="expo-hero-title">
+      <img class="hero-art" src="assets/expo-hero.png" alt="Business owners meet and exchange a card at a professional expo" width="1672" height="941" fetchpriority="high">
+      <div class="hero-shade"></div>
+      <div class="container hero-inner"><div class="hero-copy"><p class="eyebrow"><span class="eyebrow-rule"></span>BOND live expos</p><h1 id="expo-hero-title">The introduction<br>is only the<br>beginning<span class="cyan">.</span></h1><p class="hero-description">Bring your business into the room. Present live, meet the company behind the camera, and build connections that continue after the show.</p><div class="hero-actions"><a class="button button-primary" href="#experience">Explore the experience <span aria-hidden="true">→</span></a><a class="button button-outline" href="#formats">See show formats <span aria-hidden="true">↓</span></a></div></div></div>
+      <div class="container hero-bottom"><p>Live discovery. Lasting connections.</p><a href="#experience">Step inside BOND <span aria-hidden="true">↓</span></a></div>
+    </section>
+    <section class="section expo-story-section" aria-labelledby="expo-story-title"><div class="container"><div class="section-heading"><div><p class="eyebrow">A permanent online expo</p><h2 id="expo-story-title">A room full of possibilities.<br>A network that stays open<span class="cyan">.</span></h2></div><p class="section-side-copy">A 24/7 company network, with hosted live shows that bring businesses together in real time.</p></div><div class="journey-grid"><article><span class="step-number">01</span><h3>Join the room.</h3><p>Discover an industry expo, company hub, or hosted business showcase.</p></article><article><span class="step-number">02</span><h3>Take the stage.</h3><p>Representatives introduce their businesses through camera-based, five-minute Spotlights.</p></article><article><span class="step-number">03</span><h3>Open a conversation.</h3><p>Explore a participating company and chat beside the presentation.</p></article><article><span class="step-number">04</span><h3>Keep building.</h3><p>Revisit profiles and replays. Follow up with a message or meeting request.</p></article></div></div></section>
+    <section id="experience" class="section expo-section" aria-labelledby="expo-title">
+      <div class="container">
+        <div class="section-heading"><div><p class="eyebrow">Beyond the introduction</p><h2 id="expo-title">Watch. Discover.<br>Start a conversation<span class="cyan">.</span></h2></div><p class="section-side-copy">Watch the presentation.<br>Meet the company. Start a conversation.<br>All in one place.</p></div>
+        <div class="expo-window">
+          <div class="expo-window-bar"><span><i></i><i></i><i></i></span><p>BOND / Business Spotlight</p><span class="window-preview">Concept preview</span></div>
+          <div class="expo-layout">
+            <div class="expo-stage">
+              <div class="stage-overlay"></div>
+              <div class="stage-heading"><span class="stage-tag">Business Spotlight</span><span class="stage-duration">5-minute format</span></div>
+              <div class="stage-center"><button id="expo-preview" class="play-button" aria-label="Explore the Business Spotlight preview"><svg width="25" height="25" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 4.5v15l12-7.5z"/></svg></button><h3>Meet the company.<br>See the possibility.</h3><p>Explore the spotlight experience</p></div>
+              <div class="stage-bottom"><span class="stage-avatar">N</span><div><strong>Nova Logistics</strong><span>Sample spotlight company</span></div><span class="stage-preview-note">Concept still · Presentation preview</span></div>
+            </div>
+            <aside class="expo-sidebar" aria-label="Company details preview"><p class="panel-label">The company behind the stage</p><div id="expo-company-info" aria-live="polite"></div></aside>
+          </div>
+          <div class="expo-participants"><p>Explore participating companies</p><div><button data-expo-company="nova">Nova Logistics</button><button data-expo-company="helix">Helix Energy</button><button data-expo-company="lumen">Lumen Digital</button></div></div>
+        </div>
+        <div class="section-followup"><p>Explore a company profile or demo conversation without leaving the stage.</p><a class="text-link" href="index.html#businesses">Explore company profiles <span aria-hidden="true">↗</span></a></div>
+      </div>
+    </section>
+
+
+    <section id="formats" class="section format-section" aria-labelledby="formats-title"><div class="container"><div class="section-heading"><div><p class="eyebrow">Shows BOND can host</p><h2 id="formats-title">Different rooms.<br>The right conversations<span class="cyan">.</span></h2></div><p class="section-side-copy">Planned formats for discovery,<br>introductions, and practical business needs.</p></div><div class="format-grid"><article class="expo-format"><span class="format-number">01 / INDUSTRY EXPO</span><h3>Sector Showcases</h3><p>Focused shows for aerospace, construction, engineering, and other industries. Company Spotlights, Q&amp;A, and networking in one room.</p><a class="text-link" href="#sectors">Find your industry <span aria-hidden="true">→</span></a></article><article class="expo-format"><span class="format-number">02 / BUSINESS SPOTLIGHT</span><h3>Five minutes. Your business.</h3><p>A concise live introduction: who you are, the problem you solve, and how another company can connect with you.</p><a class="text-link" href="#experience">Explore a Spotlight <span aria-hidden="true">→</span></a></article><article class="expo-format"><span class="format-number">03 / BUYER &amp; PARTNER ROOM</span><h3>Start with a business need.</h3><p>A host introduces a service need or collaboration goal. Relevant companies share capabilities, then continue one-to-one.</p><a class="text-link" href="index.html#opportunities">Explore sample opportunities <span aria-hidden="true">→</span></a></article></div></div></section>
+    <section id="sectors" class="section sector-section" aria-labelledby="sector-title"><div class="container sector-layout"><div><p class="eyebrow">Find your room</p><h2 id="sector-title">Your industry.<br>Your next connection<span class="cyan">.</span></h2><p class="muted-copy">Choose a primary industry, then use services and location to find the business that fits your needs.</p></div><div class="sector-links"><a href="index.html?industry=Aerospace%20%26%20Defense#businesses">Aerospace &amp; Defense <span>↗</span></a><a href="index.html?industry=Construction#businesses">Construction <span>↗</span></a><a href="index.html?industry=Engineering#businesses">Engineering <span>↗</span></a><a href="index.html?industry=Manufacturing#businesses">Manufacturing <span>↗</span></a><a href="index.html?industry=Technology#businesses">Technology <span>↗</span></a><a href="index.html?industry=Logistics#businesses">Logistics <span>↗</span></a><a href="index.html?industry=Energy#businesses">Energy <span>↗</span></a><a href="index.html?industry=Professional%20services#businesses">Professional Services <span>↗</span></a></div></div></section>
+    <section class="section replay-section" aria-labelledby="replay-title"><div class="container replay-layout"><div class="replay-photo"><img src="assets/networking.png" alt="A business-card introduction becomes a conversation" width="1448" height="1086" loading="lazy"></div><div><p class="eyebrow">After the spotlight</p><h2 id="replay-title">The room closes.<br>The relationship<br>keeps going<span class="cyan">.</span></h2><p class="section-copy">Your company profile remains. Conversations have a place to continue. Presentations become part of your business story.</p><p class="muted-copy">Replays, company updates, saved connections, and meeting requests are part of the planned experience.</p><button class="button button-outline replay-demo-button" data-replay="nova">Explore a replay preview <span aria-hidden="true">→</span></button></div></div></section>
+    <section class="section join-section" aria-labelledby="join-title"><div class="container join-layout"><div><p class="eyebrow">Put your business in the room</p><h2 id="join-title">Your next introduction<br>could start here<span class="cyan">.</span></h2><p class="section-copy">Company profiles. Real-time discovery. Lasting connections.</p></div><div class="join-action"><button class="button button-primary button-wide" data-open-join>Explore your company profile <span aria-hidden="true">↗</span></button><p>Interactive design preview.<br>Live hosting and company messaging are planned.</p></div></div></section>
+  </main>
+  <footer class="site-footer"><div class="container footer-main"><a class="brand" href="#expo-home" aria-label="BOND home"><img src="assets/bond-wordmark.png" alt="BOND" width="2036" height="772" loading="lazy"></a><p>Business Opportunity Network &amp; Discovery</p><span class="footer-domain">JoinBOND.world</span></div><div class="container footer-bottom"><p>Relationships. Trust. Lasting connections.</p><p>BOND · Design preview</p><a href="#expo-home">Back to top ↑</a></div></footer>
+
+  <dialog id="company-dialog" class="bond-dialog" aria-label="Sample company profile"><button class="dialog-close" data-close-dialog aria-label="Close company profile">×</button><div id="company-dialog-body"></div></dialog>
+  <dialog id="join-dialog" class="bond-dialog" aria-labelledby="join-dialog-title"><button class="dialog-close" data-close-dialog aria-label="Close profile form">×</button><p class="dialog-kicker">Explore BOND</p><h2 id="join-dialog-title" class="dialog-heading">Make your company profile.</h2><p class="dialog-copy">Build a branded profile draft. Your draft stays in this browser; this preview does not register an account.</p><form id="join-form">
+  <label for="company-name">Company name</label><input id="company-name" name="company" placeholder="Your company" maxlength="80" required>
+  <label for="company-industry">Primary industry</label><select id="company-industry" name="industry" required><option value="" disabled selected>Select your industry</option><option value="Aerospace &amp; Defense">Aerospace &amp; Defense</option><option value="Construction">Construction</option><option value="Engineering">Engineering</option><option value="Manufacturing">Manufacturing</option><option value="Technology">Technology</option><option value="Logistics">Logistics</option><option value="Energy">Energy</option><option value="Professional services">Professional services</option><option value="Other industry">Other industry</option></select>
+  <label for="company-description">What does your company do?</label><textarea id="company-description" name="description" rows="3" maxlength="240" placeholder="Your services and the problem you solve." required></textarea>
+  <details class="profile-form-details"><summary>Make it yours <span>Logo, website, and more</span></summary><div class="profile-extra-fields">
+    <div class="logo-upload-grid"><div class="upload-field"><label for="company-logo">Company logo</label><input id="company-logo" name="logo" type="file" accept="image/png,image/jpeg,image/webp"><div id="logo-upload-preview" class="upload-preview"><span>Logo preview</span></div></div><div class="upload-field"><label for="company-cover">Cover image</label><input id="company-cover" name="cover" type="file" accept="image/png,image/jpeg,image/webp"><div id="cover-upload-preview" class="upload-preview cover-upload-preview"><span>Cover preview</span></div></div></div>
+    <p class="form-help">PNG, JPEG, or WebP. Up to 1 MB per image.</p><p id="profile-upload-status" class="form-help" role="status"></p>
+    <label for="company-tagline">One-line introduction</label><input id="company-tagline" name="tagline" placeholder="What makes your business stand out?" maxlength="100">
+    <label for="company-story">Company story</label><textarea id="company-story" name="story" rows="3" maxlength="1200" placeholder="How your company started, your experience, or what matters to your team."></textarea>
+    <label for="company-website">Company website</label><input id="company-website" name="website" type="url" placeholder="https://yourcompany.com" maxlength="500">
+    <label for="company-services">Services and capabilities</label><input id="company-services" name="services" placeholder="Engineering support, systems integration, project planning" maxlength="250"><p class="form-help">Separate services with commas. Add up to six.</p>
+    <div class="form-row"><div><label for="company-location">Headquarters</label><input id="company-location" name="location" placeholder="City, state" maxlength="80"></div><div><label for="company-service-area">Service area</label><input id="company-service-area" name="serviceArea" placeholder="Southern California, nationwide, remote…" maxlength="100"></div></div>
+    <div class="form-row"><div><label for="company-representative">Company representative</label><input id="company-representative" name="representative" placeholder="Representative name" maxlength="80"></div><div><label for="company-ownership">Business community</label><select id="company-ownership" name="ownership"><option>Not specified</option><option>Veteran-owned</option><option>Woman-owned</option><option>Small business</option></select></div></div>
+    <div class="form-row"><div><label for="company-public-email">Business email</label><input id="company-public-email" name="publicEmail" type="email" placeholder="hello@yourcompany.com" maxlength="150"></div><div><label for="company-public-phone">Business phone</label><input id="company-public-phone" name="publicPhone" type="tel" placeholder="Business contact number" maxlength="40"></div></div>
+    <label class="contact-visibility"><input name="publishContact" type="checkbox">Show these business contact details on the profile</label>
+  </div></details>
+  <button class="button button-primary" type="submit">Save profile draft <span aria-hidden="true">→</span></button>
+</form><div id="join-success" aria-live="polite" hidden></div></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#060D1B">
+  <title>Company Profile — BOND</title>
+  <meta name="description" content="Discover BOND, a business-first network for company profiles, live expos, and lasting connections. Explore the design preview.">
+  <meta property="og:title" content="BOND — Where businesses connect.">
+  <meta property="og:description" content="A permanent home for business connections and live discovery.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://joinbond.mejia1604.chatgpt.site/company.html">
+  <meta property="og:image" content="https://joinbond.mejia1604.chatgpt.site/assets/globe-hero.png">
+  <link rel="icon" href="assets/bond-symbol.png" type="image/png">
+  <link rel="preload" href="assets/globe-hero.png" as="image">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="enhancements.css">
+  <link rel="stylesheet" href="profiles.css">
+  <script src="app.js" defer></script>
+</head>
+<body class="company-profile-page">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="header-brand-lockup" href="index.html" aria-label="BOND — Business Opportunity Network and Discovery"><span class="brand"><img src="assets/bond-wordmark.png" alt="BOND" width="2022" height="778"></span><span class="brand-expansion">Business Opportunity Network &amp; Discovery</span></a>
+      <button id="menu-toggle" class="menu-toggle" aria-label="Open navigation" aria-controls="nav-links" aria-expanded="false"><span></span><span></span></button>
+      <nav id="nav-links" aria-label="Main navigation">
+        <a href="index.html#businesses">Businesses</a>
+        <a href="expos.html">Live expos</a>
+        <a href="index.html#opportunities">Opportunities</a>
+        <a href="index.html#about">About BOND</a>
+        <button class="button button-primary button-small" data-open-join>Join BOND <span aria-hidden="true">↗</span></button>
+      </nav>
+    </div>
+  </header>
+  <main id="main" class="profile-page-main"><div class="container"><nav class="profile-breadcrumb" aria-label="Breadcrumb"><a href="index.html">BOND</a><span aria-hidden="true">/</span><a href="index.html#businesses">Company profiles</a></nav><div id="full-company-profile" aria-live="polite"></div><noscript><p>Enable JavaScript to explore the company profile preview.</p></noscript></div></main>
+  <footer class="site-footer"><div class="container footer-main"><a class="brand" href="index.html" aria-label="BOND home"><img src="assets/bond-wordmark.png" alt="BOND" width="2036" height="772" loading="lazy"></a><p>Business Opportunity Network &amp; Discovery</p><span class="footer-domain">JoinBOND.world</span></div><div class="container footer-bottom"><p>Relationships. Trust. Lasting connections.</p><p>BOND · Design preview</p><a href="index.html">Back to top ↑</a></div></footer>
+
+  <dialog id="company-dialog" class="bond-dialog" aria-label="Sample company profile"><button class="dialog-close" data-close-dialog aria-label="Close company profile">×</button><div id="company-dialog-body"></div></dialog>
+  <dialog id="join-dialog" class="bond-dialog" aria-labelledby="join-dialog-title"><button class="dialog-close" data-close-dialog aria-label="Close profile form">×</button><p class="dialog-kicker">Explore BOND</p><h2 id="join-dialog-title" class="dialog-heading">Make your company profile.</h2><p class="dialog-copy">Build a branded profile draft. Your draft stays in this browser; this preview does not register an account.</p><form id="join-form">
+  <label for="company-name">Company name</label><input id="company-name" name="company" placeholder="Your company" maxlength="80" required>
+  <label for="company-industry">Primary industry</label><select id="company-industry" name="industry" required><option value="" disabled selected>Select your industry</option><option value="Aerospace &amp; Defense">Aerospace &amp; Defense</option><option value="Construction">Construction</option><option value="Engineering">Engineering</option><option value="Manufacturing">Manufacturing</option><option value="Technology">Technology</option><option value="Logistics">Logistics</option><option value="Energy">Energy</option><option value="Professional services">Professional services</option><option value="Other industry">Other industry</option></select>
+  <label for="company-description">What does your company do?</label><textarea id="company-description" name="description" rows="3" maxlength="240" placeholder="Your services and the problem you solve." required></textarea>
+  <details class="profile-form-details"><summary>Make it yours <span>Logo, website, and more</span></summary><div class="profile-extra-fields">
+    <div class="logo-upload-grid"><div class="upload-field"><label for="company-logo">Company logo</label><input id="company-logo" name="logo" type="file" accept="image/png,image/jpeg,image/webp"><div id="logo-upload-preview" class="upload-preview"><span>Logo preview</span></div></div><div class="upload-field"><label for="company-cover">Cover image</label><input id="company-cover" name="cover" type="file" accept="image/png,image/jpeg,image/webp"><div id="cover-upload-preview" class="upload-preview cover-upload-preview"><span>Cover preview</span></div></div></div>
+    <p class="form-help">PNG, JPEG, or WebP. Up to 1 MB per image.</p><p id="profile-upload-status" class="form-help" role="status"></p>
+    <label for="company-tagline">One-line introduction</label><input id="company-tagline" name="tagline" placeholder="What makes your business stand out?" maxlength="100">
+    <label for="company-story">Company story</label><textarea id="company-story" name="story" rows="3" maxlength="1200" placeholder="How your company started, your experience, or what matters to your team."></textarea>
+    <label for="company-website">Company website</label><input id="company-website" name="website" type="url" placeholder="https://yourcompany.com" maxlength="500">
+    <label for="company-services">Services and capabilities</label><input id="company-services" name="services" placeholder="Engineering support, systems integration, project planning" maxlength="250"><p class="form-help">Separate services with commas. Add up to six.</p>
+    <div class="form-row"><div><label for="company-location">Headquarters</label><input id="company-location" name="location" placeholder="City, state" maxlength="80"></div><div><label for="company-service-area">Service area</label><input id="company-service-area" name="serviceArea" placeholder="Southern California, nationwide, remote…" maxlength="100"></div></div>
+    <div class="form-row"><div><label for="company-representative">Company representative</label><input id="company-representative" name="representative" placeholder="Representative name" maxlength="80"></div><div><label for="company-ownership">Business community</label><select id="company-ownership" name="ownership"><option>Not specified</option><option>Veteran-owned</option><option>Woman-owned</option><option>Small business</option></select></div></div>
+    <div class="form-row"><div><label for="company-public-email">Business email</label><input id="company-public-email" name="publicEmail" type="email" placeholder="hello@yourcompany.com" maxlength="150"></div><div><label for="company-public-phone">Business phone</label><input id="company-public-phone" name="publicPhone" type="tel" placeholder="Business contact number" maxlength="40"></div></div>
+    <label class="contact-visibility"><input name="publishContact" type="checkbox">Show these business contact details on the profile</label>
+  </div></details>
+  <button class="button button-primary" type="submit">Save profile draft <span aria-hidden="true">→</span></button>
+</form><div id="join-success" aria-live="polite" hidden></div></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>
