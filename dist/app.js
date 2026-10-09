@@ -6,6 +6,7 @@
   const SAVED_KEY = "bond.demo.saved";
   const MEETINGS_KEY = "bond.demo.meetings";
   const QUESTIONS_KEY = "bond.demo.questions";
+  const INTROS_KEY = "bond.demo.intros";
   const MAX_UPLOAD_BYTES = 1024 * 1024;
   const MAX_IMAGE_DATA_URL_LENGTH = 1.5 * 1024 * 1024;
   const MAX_PROFILE_STORAGE_LENGTH = 6 * 1024 * 1024;
@@ -142,16 +143,19 @@
     },
   ];
 
-  const sampleIntroductions = {
-    nova: [["lumen", "Digital dashboard capabilities"], ["creston", "Operational process planning"]],
-    helix: [["vector", "Engineering coordination"], ["fieldstone", "Construction project coordination"]],
-    creston: [["fieldstone", "Project delivery capabilities"], ["lumen", "Digital reporting tools"]],
-    lumen: [["nova", "Fleet workflow capabilities"], ["creston", "Program management capabilities"]],
-    aero: [["vector", "Engineering design support"], ["forge", "Prototyping and fabrication"]],
-    fieldstone: [["vector", "Design support"], ["nova", "Fleet and distribution coordination"]],
-    vector: [["aero", "Systems integration capabilities"], ["helix", "Energy planning capabilities"]],
-    forge: [["aero", "Systems integration capabilities"], ["vector", "Engineering design support"]],
+  const matchRelations = {
+    "Aerospace & Defense": [["Engineering", "Partner", "Design and analysis support for programs"], ["Manufacturing", "Supplier", "Precision parts and prototypes"], ["Technology", "Supplier", "Software and data systems for programs"], ["Logistics", "Supplier", "Parts shipping and distribution"], ["Professional services", "Teaming", "Program management on larger bids"], ["Construction", "Supplier", "Facilities, hangars, and test sites"], ["Energy", "Partner", "Power and efficiency systems"]],
+    Construction: [["Engineering", "Partner", "Design support for bids and builds"], ["Manufacturing", "Supplier", "Fabricated components and materials"], ["Logistics", "Supplier", "Material delivery and site logistics"], ["Energy", "Customer", "Energy projects need construction delivery"], ["Aerospace & Defense", "Customer", "Facilities and hangar construction"], ["Professional services", "Teaming", "Program management on larger bids"], ["Technology", "Supplier", "Project tracking and field software"]],
+    Engineering: [["Construction", "Customer", "Builders need design and engineering support"], ["Aerospace & Defense", "Customer", "Programs need engineering support"], ["Manufacturing", "Partner", "Design for manufacturing and prototyping"], ["Energy", "Customer", "Energy projects need engineering"], ["Technology", "Supplier", "Modeling and analysis software"], ["Professional services", "Teaming", "Joint proposals on larger programs"]],
+    Manufacturing: [["Engineering", "Partner", "Designs ready for production"], ["Aerospace & Defense", "Customer", "Precision parts for aerospace programs"], ["Construction", "Customer", "Fabricated components for builds"], ["Logistics", "Supplier", "Shipping and distribution of finished goods"], ["Energy", "Customer", "Components for energy systems"], ["Technology", "Supplier", "Production planning and automation software"]],
+    Technology: [["Logistics", "Customer", "Fleet and operations software needs"], ["Manufacturing", "Customer", "Production planning and automation"], ["Construction", "Customer", "Field and project software"], ["Professional services", "Partner", "Process design for software rollouts"], ["Energy", "Customer", "Monitoring and reporting dashboards"], ["Aerospace & Defense", "Customer", "Data systems for programs"], ["Engineering", "Partner", "Technical integrations"]],
+    Logistics: [["Technology", "Supplier", "Dispatch, tracking, and reporting software"], ["Manufacturing", "Customer", "Moving finished goods"], ["Construction", "Customer", "Material delivery to job sites"], ["Professional services", "Supplier", "Operations and process improvement"], ["Energy", "Customer", "Equipment transport for energy projects"], ["Aerospace & Defense", "Customer", "Parts distribution"]],
+    Energy: [["Engineering", "Partner", "Engineering for energy systems"], ["Construction", "Partner", "Installation and site work"], ["Manufacturing", "Supplier", "Components and equipment"], ["Logistics", "Supplier", "Equipment transport"], ["Technology", "Supplier", "Monitoring and reporting dashboards"], ["Professional services", "Teaming", "Program delivery on larger projects"]],
+    "Professional services": [["Construction", "Customer", "Program management for construction delivery"], ["Logistics", "Customer", "Operations and process improvement"], ["Technology", "Partner", "Digital tools for client programs"], ["Engineering", "Teaming", "Joint proposals on larger programs"], ["Energy", "Customer", "Program delivery for energy projects"], ["Aerospace & Defense", "Customer", "Program and compliance support"], ["Manufacturing", "Customer", "Process improvement on the shop floor"]],
   };
+  const matchTypes = { Customer: "Potential customer", Partner: "Partner", Supplier: "Supplier", Teaming: "Teaming partner" };
+  const matchWeights = { Customer: 3, Partner: 3, Supplier: 2, Teaming: 2 };
+  const matchStopwords = new Set(["sample", "company", "companies", "business", "businesses", "service", "services", "support", "focused", "introducing", "capabilities", "capability", "across", "their", "with", "that", "this", "from", "into", "offering", "connecting", "presenting", "showing", "bringing", "everyday", "ideas", "network", "teams", "team", "work", "help", "helping", "movement", "goods", "general"]);
 
   const iconPaths = {
     Logistics: ["M4 21V5h11v16", "M15 10h5v11", "M8 9h3M8 13h3M8 17h3M18 14v1M18 18v1M2 21h20"],
@@ -166,6 +170,7 @@
 
   const profiles = [...sampleProfiles, ...readSavedProfiles()];
   const savedCompanies = new Set(readStoredIds(SAVED_KEY));
+  const introRequests = new Set(readStoredIds(INTROS_KEY));
   const messagesByCompany = readSavedMessages();
   const questionsByCompany = readSavedMessages(QUESTIONS_KEY);
   const meetingRequests = readSavedMeetings();
@@ -653,6 +658,114 @@
     showDialog(dialog, opener);
   }
 
+  function matchTerms(profile) {
+    const text = [profile.description, profile.tagline || "", ...profile.services].join(" ").toLocaleLowerCase();
+    const terms = new Set();
+    for (const word of text.split(/[^a-z]+/)) {
+      if (word.length < 4 || matchStopwords.has(word)) continue;
+      terms.add(word.endsWith("s") && word.length > 4 ? word.slice(0, -1) : word);
+    }
+    return terms;
+  }
+
+  function cityOf(profile) {
+    return (profile.location || "").split(",")[0].trim().toLocaleLowerCase();
+  }
+
+  function findMatches(profile) {
+    const ownTerms = matchTerms(profile);
+    const relations = matchRelations[profile.category] || [];
+    const results = [];
+    for (const candidate of profiles) {
+      if (candidate.id === profile.id) continue;
+      const sameIndustry = candidate.category === profile.category && profile.category !== "Other industry";
+      const relation = sameIndustry
+        ? [candidate.category, "Teaming", "Same industry: subcontracting or teaming on larger bids"]
+        : relations.find(([category]) => category === candidate.category);
+      const candidateTerms = matchTerms(candidate);
+      const shared = sameIndustry ? [] : [...ownTerms].filter((term) => candidateTerms.has(term)).slice(0, 3);
+      if (!relation && !shared.length) continue;
+      const type = relation ? relation[1] : "Partner";
+      const reasons = [relation ? relation[2] : "Overlapping capabilities"];
+      if (shared.length) reasons.push(`Shared focus: ${shared.join(", ")}`);
+      const sameCity = cityOf(profile) && cityOf(profile) === cityOf(candidate);
+      if (sameCity) reasons.push(`Both based in ${candidate.location.split(",")[0]}`);
+      const score = (relation ? matchWeights[type] : 1) + shared.length * 1.5 + (sameCity ? 1 : 0);
+      results.push({ profile: candidate, type, reasons, score });
+    }
+    return results.sort((a, b) => b.score - a.score || a.profile.name.localeCompare(b.profile.name));
+  }
+
+  function matchStrength(score) {
+    return score >= 5 ? "Strong match" : score >= 3 ? "Good match" : "Possible match";
+  }
+
+  function renderMatchList(profile, container, { limit = 6, compact = false } = {}) {
+    const matches = findMatches(profile).slice(0, limit);
+    if (!matches.length) {
+      container.append(element("p", "ownership-note", "No matches yet. Add services and an industry to get suggestions."));
+      return;
+    }
+    const list = element(compact ? "ul" : "div", compact ? "match-list match-list-compact" : "match-grid");
+    for (const match of matches) {
+      const item = element(compact ? "li" : "article", "match-card");
+      const head = element("div", "match-head");
+      const logo = element("span", "company-avatar match-logo");
+      logo.append(companyLogo(match.profile));
+      const name = element("div", "match-name");
+      name.append(element("strong", "", match.profile.name), element("span", "", match.profile.category));
+      head.append(logo, name);
+      const tags = element("p", "match-tags");
+      tags.append(element("span", "match-type", matchTypes[match.type]), element("span", "match-strength", matchStrength(match.score)));
+      const reasons = element("ul", "match-reasons");
+      for (const reason of compact ? match.reasons.slice(0, 1) : match.reasons) reasons.append(element("li", "", reason));
+      const view = element("button", "company-link", "View company profile");
+      view.type = "button";
+      view.setAttribute("aria-label", `View ${match.profile.name} profile`);
+      view.addEventListener("click", () => openCompany(match.profile, view));
+      item.append(head, tags, reasons);
+      if (!compact) {
+        const intro = element("button", "button button-secondary match-intro", introRequests.has(match.profile.id) ? "Introduction requested" : "Request introduction");
+        intro.type = "button";
+        intro.setAttribute("aria-label", `${intro.textContent} to ${match.profile.name}`);
+        const status = element("p", "match-status");
+        status.setAttribute("role", "status");
+        intro.addEventListener("click", () => {
+          introRequests.add(match.profile.id);
+          const persisted = writeStoredValue(INTROS_KEY, [...introRequests]);
+          intro.textContent = "Introduction requested";
+          intro.setAttribute("aria-label", `Introduction requested to ${match.profile.name}`);
+          status.textContent = persisted ? "Saved in this browser. BOND will send introductions when it launches." : "Saved for this visit; browser storage is unavailable.";
+        });
+        item.append(intro, status);
+      }
+      item.append(view);
+      list.append(item);
+    }
+    container.append(list, element("p", "match-disclosure", "Matching preview: suggestions come from industry relationships, shared capabilities, and location. AI matching that reads full profiles is planned."));
+  }
+
+  function renderMatchmaker() {
+    const form = document.getElementById("matchmaker-form");
+    const results = document.getElementById("matchmaker-results");
+    if (!form || !results) return;
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      const category = cleanText(data.get("industry"), 40);
+      if (!categories.includes(category)) {
+        form.elements.namedItem("industry")?.focus();
+        return;
+      }
+      const draft = { id: "matchmaker-draft", name: "Your company", category, location: cleanText(data.get("city"), 80), description: "", services: parseServices(data.get("services")) };
+      results.replaceChildren(element("h3", "matchmaker-heading", `Suggested matches for a ${category.toLocaleLowerCase()} company`));
+      renderMatchList(draft, results, { limit: 6 });
+      results.hidden = false;
+      results.querySelector(".matchmaker-heading")?.setAttribute("tabindex", "-1");
+      results.querySelector(".matchmaker-heading")?.focus();
+    });
+  }
+
   function showDirectory() {
     renderDirectory();
     document.getElementById("businesses")?.scrollIntoView({ block: "start" });
@@ -837,20 +950,10 @@
     renderProfileContact(profile, contact);
     container.append(contact, fullProfileLink(profile));
     profileActions(profile, container, onConnect);
-    if (inDialog && sampleIntroductions[profile.id]) {
+    if (inDialog) {
       const introductions = element("section", "sample-introductions");
-      introductions.append(element("h4", "detail-label", "Suggested sample introductions"));
-      introductions.append(element("p", "ownership-note", "Illustrative connections based on the sample capabilities shown."));
-      for (const [companyId, reason] of sampleIntroductions[profile.id]) {
-        const suggested = resolveProfile(companyId);
-        if (!suggested) continue;
-        const item = element("div", "introduction-item");
-        const button = element("button", "company-link", suggested.name);
-        button.type = "button";
-        button.addEventListener("click", () => openCompany(suggested));
-        item.append(button, element("p", "ownership-note", reason));
-        introductions.append(item);
-      }
+      introductions.append(element("h4", "detail-label", "Suggested matches"));
+      renderMatchList(profile, introductions, { limit: 3, compact: true });
       container.append(introductions);
     }
   }
@@ -954,6 +1057,8 @@
       card.append(button);
       opportunitySection.append(card);
     }
+    const matches = section("Suggested matches", "Customers, partners, suppliers, and teaming partners this company could work with.");
+    renderMatchList(profile, matches, { limit: 6 });
     const spotlight = section("Business Spotlight", "A five-minute Spotlight, recorded by the company in its own space or presented live, premieres on the main stage and is followed by live Q&A. The recording stays on this profile as a replay. This preview shows the replay format as text.");
     const replay = element("button", "button button-secondary", "Explore replay format");
     replay.type = "button";
@@ -1669,6 +1774,10 @@
       }
       const success = document.getElementById("join-success");
       if (success && saved) success.append(fullProfileLink(createdProfile));
+      if (success) {
+        success.append(element("h3", "detail-label", "Your first matches"));
+        renderMatchList(createdProfile, success, { limit: 3, compact: true });
+      }
       announce("Your local sample company profile is ready.");
       } catch (error) {
         if (submittedVersion === uploads.version()) {
@@ -1682,6 +1791,7 @@
 
     renderDirectory();
     renderFeatured();
+    renderMatchmaker();
     renderExpoFloor();
     renderOpportunities();
     renderFullCompanyProfile();

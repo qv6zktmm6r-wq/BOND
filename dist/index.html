@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="enhancements.css">
   <link rel="stylesheet" href="profiles.css">
+  <link rel="stylesheet" href="matches.css">
   <link rel="stylesheet" href="imagery.css">
   <link rel="stylesheet" href="spotlight.css">
   <link rel="stylesheet" href="homepage.css">
@@ -146,6 +147,19 @@
         <div class="preview-label"><span class="preview-pill">Interactive preview</span><p>Sample companies shown for the design.</p><p id="directory-status" aria-live="polite"></p></div>
         <div id="company-grid" class="company-grid"></div>
         <noscript><p>Enable JavaScript to explore the sample company directory.</p></noscript>
+      </div>
+    </section>
+
+    <section id="matchmaking" class="section matchmaker-section" aria-labelledby="matchmaker-title">
+      <div class="container">
+        <div class="section-heading"><div><p class="eyebrow">Business matchmaking</p><h2 id="matchmaker-title">Meet the companies<br>you should know<span class="cyan">.</span></h2></div><p class="section-side-copy">Every company gets suggested customers, partners, suppliers, and teaming partners based on what it does. Try it with your business.</p></div>
+        <form id="matchmaker-form" class="matchmaker-form">
+          <div><label for="matchmaker-industry">Your industry</label><select id="matchmaker-industry" name="industry" required><option value="" disabled selected>Select your industry</option><option value="Aerospace &amp; Defense">Aerospace &amp; Defense</option><option value="Construction">Construction</option><option value="Engineering">Engineering</option><option value="Manufacturing">Manufacturing</option><option value="Technology">Technology</option><option value="Logistics">Logistics</option><option value="Energy">Energy</option><option value="Professional services">Professional services</option></select></div>
+          <div><label for="matchmaker-services">What you do</label><input id="matchmaker-services" name="services" placeholder="General construction, site planning" maxlength="250"></div>
+          <div><label for="matchmaker-city">City (optional)</label><input id="matchmaker-city" name="city" placeholder="San Diego" maxlength="80"></div>
+          <button class="button button-primary" type="submit">Find my matches <span aria-hidden="true">→</span></button>
+        </form>
+        <div id="matchmaker-results" class="matchmaker-results" aria-live="polite" hidden></div>
       </div>
     </section>
 
