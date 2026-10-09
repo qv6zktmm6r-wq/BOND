@@ -1,5 +1,6 @@
 # BOND — Business Opportunity Network & Discovery
 
+**Domain:** https://joinbond.world (registered at Namecheap; not yet connected to Vercel)  
 **Hosting:** Vercel (project `bond`, static files from `dist/`)  
 **Original site:** https://joinbond.mejia1604.chatgpt.site (ChatGPT Sites; retire after the Vercel site is live)  
 **GitHub repository:** https://github.com/qv6zktmm6r-wq/BOND  
@@ -35,7 +36,7 @@ Open http://localhost:3000. The site is plain HTML, CSS, and JavaScript; it need
 
 BOND is hosted on Vercel. The repository is no longer linked to ChatGPT Sites (the `.openai/hosting.json` project file was removed). The original ChatGPT Site at https://joinbond.mejia1604.chatgpt.site stays up until it is unpublished from the ChatGPT account; do that only after the Vercel site is live.
 
-Once BOND has its final address, update the `og:url` and `og:image` tags in `dist/index.html`, `dist/expos.html`, and `dist/company.html`, which still point at the original ChatGPT Site.
+The `og:url` and `og:image` share-preview tags in `dist/index.html`, `dist/expos.html`, and `dist/company.html` point at https://joinbond.world. Link previews will only show images once that domain is connected to the Vercel project.
 
 The current implementation is an interactive static prototype with fictional demo companies and browser-local behavior. Real shared accounts, persistent messaging, and live broadcasting still require backend implementation.
 
