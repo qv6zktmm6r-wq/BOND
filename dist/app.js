@@ -541,6 +541,116 @@
     grid.replaceChildren(content);
   }
 
+  const boothPresence = { nova: "presenting", aero: "available", vector: "available", lumen: "available", fieldstone: "available", forge: "available", helix: "away", creston: "away" };
+  const presenceLabels = { presenting: "Presenting on the main stage", available: "Representative available", away: "Representative away" };
+  let currentFloorFilter = "All";
+
+  function boothNumber(profile) {
+    return `B-${String(profiles.indexOf(profile) + 1).padStart(2, "0")}`;
+  }
+
+  function presenceOf(profile) {
+    return boothPresence[profile.id] || "away";
+  }
+
+  function presenceBadge(profile) {
+    const presence = presenceOf(profile);
+    const badge = element("span", "booth-presence", presenceLabels[presence]);
+    badge.dataset.presence = presence;
+    return badge;
+  }
+
+  function renderExpoFloor() {
+    const grid = document.getElementById("floor-booths");
+    if (!grid) return;
+    const filters = document.getElementById("floor-filters");
+    if (filters && !filters.childElementCount) {
+      const halls = ["All", ...categories.filter((category) => profiles.some((profile) => profile.category === category))];
+      for (const hall of halls) {
+        const button = element("button", "filter-btn", hall === "All" ? "All halls" : hall);
+        button.type = "button";
+        button.dataset.floorFilter = hall;
+        button.addEventListener("click", () => {
+          currentFloorFilter = hall;
+          renderExpoFloor();
+        });
+        filters.append(button);
+      }
+    }
+    filters?.querySelectorAll("[data-floor-filter]").forEach((button) => {
+      const active = button.dataset.floorFilter === currentFloorFilter;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    const visible = profiles.filter((profile) => currentFloorFilter === "All" || profile.category === currentFloorFilter);
+    const content = document.createDocumentFragment();
+    for (const profile of visible) {
+      const booth = element("button", "booth");
+      booth.type = "button";
+      booth.dataset.presence = presenceOf(profile);
+      booth.setAttribute("aria-label", `Enter ${profile.name} booth ${boothNumber(profile)}, ${profile.category}, ${presenceLabels[presenceOf(profile)]}`);
+      const logo = element("span", "company-avatar booth-logo");
+      logo.classList.toggle("has-uploaded-logo", Boolean(profile.logo));
+      logo.append(companyLogo(profile));
+      booth.append(element("span", "booth-number", profile.local ? `${boothNumber(profile)} · Your booth` : boothNumber(profile)), logo, element("strong", "booth-name", profile.name), element("span", "booth-category", profile.category), presenceBadge(profile));
+      booth.addEventListener("click", () => openBooth(profile, booth));
+      content.append(booth);
+    }
+    grid.replaceChildren(content);
+    const available = visible.filter((profile) => presenceOf(profile) !== "away").length;
+    const status = document.getElementById("floor-status");
+    if (status) status.textContent = `${visible.length} ${visible.length === 1 ? "booth" : "booths"} · ${available} with a representative on the floor.`;
+  }
+
+  function openBooth(profile, opener) {
+    const dialog = document.getElementById("company-dialog");
+    const body = document.getElementById("company-dialog-body");
+    if (!dialog || !body) return;
+    body.replaceChildren();
+    body.append(element("p", "dialog-kicker", `Booth ${boothNumber(profile)} · ${profile.local ? "Your local preview" : "Sample company"}`));
+    const title = element("h2", "dialog-heading", profile.name);
+    title.id = "company-dialog-title";
+    dialog.setAttribute("aria-labelledby", title.id);
+    body.append(title, element("p", "company-category", profile.category));
+    if (profile.tagline) body.append(element("p", "profile-tagline", profile.tagline));
+    const video = element("figure", "booth-video");
+    const poster = element("img");
+    poster.src = profile.cover || industryImages[profile.category] || "assets/expo-hero.png";
+    poster.alt = "";
+    const play = element("button", "play-button booth-play");
+    play.type = "button";
+    play.setAttribute("aria-label", `Play ${profile.name} 30-second introduction`);
+    const playIcon = element("span", "", "▶");
+    playIcon.setAttribute("aria-hidden", "true");
+    play.append(playIcon);
+    const caption = element("figcaption", "", "30-second introduction");
+    play.addEventListener("click", () => {
+      caption.textContent = "This booth has no introduction video yet. Companies will upload a 30-second video when BOND launches.";
+      caption.classList.add("is-note");
+      play.remove();
+      caption.setAttribute("tabindex", "-1");
+      caption.focus();
+    });
+    video.append(poster, play, caption);
+    body.append(video, element("p", "dialog-copy", profile.description));
+    const rep = element("section", "booth-rep");
+    rep.append(element("h3", "detail-label", "In the booth"), element("p", "representative-name", profile.representative || "Company representative"), element("p", "representative-role", `${profile.representativeRole || "Company representative"} · Sample role`), presenceBadge(profile));
+    body.append(rep);
+    if (presenceOf(profile) === "presenting" && document.getElementById("experience")) {
+      const watch = element("button", "button button-secondary booth-watch", "Watch on the main stage");
+      watch.type = "button";
+      watch.addEventListener("click", () => {
+        dialog.close();
+        renderExpoPanel(profile);
+        document.getElementById("experience").scrollIntoView({ block: "start" });
+      });
+      body.append(watch);
+    }
+    profileActions(profile, body);
+    body.append(fullProfileLink(profile));
+    showDialog(dialog, opener);
+  }
+
   function showDirectory() {
     renderDirectory();
     document.getElementById("businesses")?.scrollIntoView({ block: "start" });
@@ -1355,6 +1465,7 @@
       if (locationFilter) locationFilter.value = "All";
       if (ownershipFilter) ownershipFilter.value = "All";
       renderDirectory();
+      renderExpoFloor();
       form.reset();
       const hasDirectory = Boolean(document.getElementById("company-grid"));
       setFormMessage(saved
@@ -1393,6 +1504,7 @@
 
     renderDirectory();
     renderFeatured();
+    renderExpoFloor();
     renderOpportunities();
     renderFullCompanyProfile();
   }

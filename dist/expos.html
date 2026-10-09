@@ -17,6 +17,7 @@
   <link rel="stylesheet" href="enhancements.css">
   <link rel="stylesheet" href="profiles.css">
   <link rel="stylesheet" href="imagery.css">
+  <link rel="stylesheet" href="expo-floor.css">
   <script src="app.js" defer></script>
 </head>
 <body class="expo-page">
@@ -38,8 +39,26 @@
     <section id="expo-home" class="hero expo-photo-hero" aria-labelledby="expo-hero-title">
       <img class="hero-art" src="assets/expo-hero.png" alt="Business owners meet and exchange a card at a professional expo" width="1672" height="941" fetchpriority="high">
       <div class="hero-shade"></div>
-      <div class="container hero-inner"><div class="hero-copy"><p class="eyebrow"><span class="eyebrow-rule"></span>BOND live expos</p><h1 id="expo-hero-title">The introduction<br>is only the<br>beginning<span class="cyan">.</span></h1><p class="hero-description">Bring your business into the room. Present live, meet the company behind the camera, and build connections that continue after the show.</p><div class="hero-actions"><a class="button button-primary" href="#experience">Explore the experience <span aria-hidden="true">→</span></a><a class="button button-outline" href="#formats">See show formats <span aria-hidden="true">↓</span></a></div></div></div>
-      <div class="container hero-bottom"><p>Live discovery. Lasting connections.</p><a href="#experience">Step inside BOND <span aria-hidden="true">↓</span></a></div>
+      <div class="container hero-inner"><div class="hero-copy"><p class="eyebrow"><span class="eyebrow-rule"></span>BOND live expos</p><h1 id="expo-hero-title">The introduction<br>is only the<br>beginning<span class="cyan">.</span></h1><p class="hero-description">Bring your business into the room. Present live, meet the company behind the camera, and build connections that continue after the show.</p><div class="hero-actions"><a class="button button-primary" href="#floor">Walk the expo floor <span aria-hidden="true">→</span></a><a class="button button-outline" href="#formats">See show formats <span aria-hidden="true">↓</span></a></div></div></div>
+      <div class="container hero-bottom"><p>Live discovery. Lasting connections.</p><a href="#floor">Step inside BOND <span aria-hidden="true">↓</span></a></div>
+    </section>
+    <section id="floor" class="section expo-floor-section" aria-labelledby="floor-title">
+      <div class="container">
+        <div class="section-heading"><div><p class="eyebrow">The expo floor</p><h2 id="floor-title">Walk the floor.<br>Step into any booth<span class="cyan">.</span></h2></div><p class="section-side-copy">See who is presenting and which representatives are available. Enter a booth to watch an introduction, start a conversation, or request a meeting.</p></div>
+        <div class="floor-toolbar">
+          <div id="floor-filters" class="directory-filters" role="group" aria-label="Filter booths by industry hall"></div>
+          <ul class="floor-legend" aria-label="Booth status key"><li data-presence="presenting">Presenting</li><li data-presence="available">Representative available</li><li data-presence="away">Away</li></ul>
+        </div>
+        <div class="preview-label"><span class="preview-pill">Interactive preview</span><p>Sample companies and sample availability.</p><p id="floor-status" aria-live="polite"></p></div>
+        <div class="expo-floor">
+          <a class="floor-stage" href="#experience">
+            <img src="assets/spotlight-selected.png" alt="" width="1024" height="576" loading="lazy" decoding="async">
+            <span class="floor-stage-tag"><i aria-hidden="true"></i>Main stage · Live now</span>
+            <span class="floor-stage-copy"><strong>Nova Logistics</strong><small>Five-minute Business Spotlight · Sample</small><span class="text-link">Watch on the main stage <span aria-hidden="true">↓</span></span></span>
+          </a>
+          <div id="floor-booths" class="floor-booths"></div>
+        </div>
+      </div>
     </section>
     <section class="section expo-story-section" aria-labelledby="expo-story-title"><div class="container"><div class="section-heading"><div><p class="eyebrow">A permanent online expo</p><h2 id="expo-story-title">A room full of possibilities.<br>A network that stays open<span class="cyan">.</span></h2></div><p class="section-side-copy">A 24/7 company network, with hosted live shows that bring businesses together in real time.</p></div><div class="journey-grid"><article><span class="step-number">01</span><h3>Join the room.</h3><p>Discover an industry expo, company hub, or hosted business showcase.</p></article><article><span class="step-number">02</span><h3>Take the stage.</h3><p>Representatives introduce their businesses through camera-based, five-minute Spotlights.</p></article><article><span class="step-number">03</span><h3>Open a conversation.</h3><p>Explore a participating company and chat beside the presentation.</p></article><article><span class="step-number">04</span><h3>Keep building.</h3><p>Revisit profiles and replays. Follow up with a message or meeting request.</p></article></div></div></section>
     <section id="experience" class="section expo-section" aria-labelledby="expo-title">
