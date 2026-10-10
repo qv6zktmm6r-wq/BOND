@@ -22,7 +22,7 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 
 - [x] Industry tiles with images
 - [x] Featured company cards
-- [~] Advanced filters: industry, location, and business community exist, and search now covers certifications; dedicated certification, service-area, and company-size filters do not
+- [x] Advanced filters: industry, headquarters, service area (Southern California, Northern California, nationwide; statewide and nationwide companies count), certification (options built from the certifications companies list; "in progress" ones don't count), company size, and business community, with Clear filters. Company size is a new optional profile field. All of it is self-reported until verification exists
 
 ## 1. Live Expo Floor (signature experience)
 
@@ -56,7 +56,7 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 - [x] Direct contact options: a contact bar under the company name (Contact company, Visit website, Watch introduction, Share profile), plus message, meeting, email, and phone
 - [x] Mini-website feel: sticky section navigation (Overview, Video, Services, Certifications, Projects, Story, Matches, Contact)
 - [ ] Real video hosting so uploaded videos are visible to everyone, not just the uploader's browser (needs a provider; owner approval for cost)
-- [ ] Edit an existing profile (today a company creates a new draft instead)
+- [x] Edit an existing profile: "Edit profile" on your own profile (popup, full page) and on the dashboard reopens the form filled in; empty image, video, and photo fields keep what was uploaded; a failed save changes nothing
 
 ## 4. Live Business Spotlight
 

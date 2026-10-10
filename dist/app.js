@@ -32,6 +32,34 @@
   const MAX_PROJECT_PHOTOS = 3;
   const categories = ["Aerospace & Defense", "Construction", "Engineering", "Manufacturing", "Technology", "Logistics", "Energy", "Professional services", "Other industry"];
   const ownershipOptions = ["Veteran-owned", "Woman-owned", "Small business"];
+  const companySizes = ["1–10 people", "11–50 people", "51–200 people", "More than 200 people"];
+  const serviceRegions = [
+    { id: "socal", label: "Southern California", words: ["southern california", "socal", "so cal", "san diego", "riverside", "irvine", "los angeles", "orange county", "inland empire", "long beach", "anaheim", "santa ana", "san bernardino", "temecula", "oceanside"] },
+    { id: "norcal", label: "Northern California", words: ["northern california", "norcal", "nor cal", "bay area", "san francisco", "san jose", "oakland", "sacramento", "silicon valley", "fresno"] },
+  ];
+  const statewideWords = ["statewide", "all of california", "throughout california", "across california", "california wide"];
+  const nationwideWords = ["nationwide", "national", "united states", "across the us", "usa", "anywhere", "remote", "all 50 states"];
+  const certificationGroups = [
+    { id: "iso9001", label: "ISO 9001", words: ["iso 9001"] },
+    { id: "as9100", label: "AS9100", words: ["as9100", "as 9100"] },
+    { id: "itar", label: "ITAR registration", words: ["itar"] },
+    { id: "pe", label: "Licensed engineers (PE)", words: ["professional engineer", "professional engineers", "pe"] },
+    { id: "contractor", label: "Contractor license", words: ["contractor license", "contractors license", "contractor s license", "cslb"] },
+    { id: "osha", label: "OSHA safety", words: ["osha"] },
+    { id: "soc2", label: "SOC 2", words: ["soc 2", "soc2"] },
+    { id: "pmp", label: "PMP", words: ["pmp"] },
+    { id: "sixsigma", label: "Lean Six Sigma", words: ["six sigma"] },
+    { id: "leed", label: "LEED", words: ["leed"] },
+    { id: "nabcep", label: "NABCEP solar", words: ["nabcep"] },
+    { id: "dot", label: "DOT motor carrier", words: ["dot registered", "usdot", "motor carrier"] },
+    { id: "hazmat", label: "Hazardous materials", words: ["hazardous materials", "hazmat"] },
+    { id: "aws", label: "AWS Partner", words: ["aws partner"] },
+    { id: "sdvosb", label: "VOSB / SDVOSB", words: ["vosb", "sdvosb"] },
+    { id: "wosb", label: "WOSB / EDWOSB", words: ["wosb", "edwosb"] },
+    { id: "8a", label: "SBA 8(a)", words: ["8 a", "8a"] },
+    { id: "hubzone", label: "HUBZone", words: ["hubzone"] },
+    { id: "dbe", label: "DBE", words: ["dbe", "disadvantaged business enterprise"] },
+  ];
   const sampleProfiles = [
     {
       id: "nova",
@@ -141,34 +169,42 @@
 
   const sampleShowcase = {
     nova: {
+      size: "51–200 people", serviceArea: "Southern California and Arizona",
       certifications: ["DOT-registered motor carrier", "Hazardous materials handling training"],
       projects: [["Regional distribution launch", "Dock scheduling and same-day routes for a growing retailer.", "assets/project-nova.jpg"], ["Job-site delivery program", "Material deliveries coordinated across multi-site builds.", "assets/industry-logistics.jpg"]],
     },
     helix: {
+      size: "11–50 people", serviceArea: "San Diego and Southern California",
       certifications: ["NABCEP PV installation professional", "LEED Green Associate"],
       projects: [["Warehouse rooftop solar", "Planning and installation oversight for a commercial rooftop array.", "assets/project-helix.jpg"], ["Facility efficiency review", "Energy use assessment with a phased upgrade plan.", "assets/industry-energy.jpg"]],
     },
     creston: {
+      size: "1–10 people", serviceArea: "Nationwide, remote and on-site",
       certifications: ["PMP-certified program managers", "Lean Six Sigma Green Belt"],
       projects: [["Program kickoff workshop", "Turned a multi-team plan into a shared delivery timeline.", "assets/project-creston.jpg"], ["Operations process redesign", "Mapped and simplified a client's order-to-delivery process.", "assets/collaboration.png"]],
     },
     lumen: {
+      size: "11–50 people", serviceArea: "Nationwide (remote)",
       certifications: ["SOC 2 Type II (in progress)", "AWS Partner"],
       projects: [["Fleet operations dashboard", "Live map and reporting wall for a dispatch team.", "assets/project-lumen.jpg"], ["Workflow automation rollout", "Replaced spreadsheet handoffs with an approval workflow.", "assets/industry-software.jpg"]],
     },
     aero: {
+      size: "11–50 people", serviceArea: "Southern California",
       certifications: ["AS9100 quality management", "ITAR registration"],
       projects: [["Satellite subassembly integration", "Harness routing and connector integration on a test stand.", "assets/project-aero.jpg"], ["Hangar test support", "Engineering support during ground testing.", "assets/industry-aerospace.jpg"]],
     },
     fieldstone: {
+      size: "51–200 people", serviceArea: "San Diego County",
       certifications: ["California general contractor license (Class B)", "OSHA 30 construction safety"],
       projects: [["Two-story office building", "Ground-up commercial build with a glass storefront.", "assets/project-fieldstone.jpg"], ["Site planning and coordination", "Phased site work coordinated with engineering partners.", "assets/industry-construction.jpg"]],
     },
     vector: {
+      size: "11–50 people", serviceArea: "California statewide",
       certifications: ["Licensed Professional Engineers (PE) on staff", "ISO 9001 quality management"],
       projects: [["Pedestrian truss bridge", "Structural design support for a park crossing.", "assets/project-vector.jpg"], ["Design review program", "Technical consulting across a multi-phase build.", "assets/industry-engineering.jpg"]],
     },
     forge: {
+      size: "51–200 people", serviceArea: "Riverside; ships nationwide",
       certifications: ["ISO 9001 quality management", "AS9100 (in progress)"],
       projects: [["Precision bracket run", "CNC-machined aluminum brackets from prototype to production.", "assets/project-forge.jpg"], ["Prototype fabrication", "Short-run prototypes for design validation.", "assets/industry-manufacturing.jpg"]],
     },
@@ -177,6 +213,8 @@
     const showcase = sampleShowcase[profile.id];
     profile.certifications = showcase ? showcase.certifications : [];
     profile.projects = showcase ? showcase.projects.map(([title, summary, image]) => ({ title, summary, image })) : [];
+    profile.size = showcase ? showcase.size : "";
+    profile.serviceArea = showcase ? showcase.serviceArea : "";
   }
 
   const sampleOpportunities = [
@@ -540,6 +578,7 @@
           certifications: parseCertifications(profile.certifications), projects: parseProjects(profile.projects),
           story: cleanText(profile.story, 1200),
           serviceArea: cleanText(profile.serviceArea, 150), website: normalizeWebsite(profile.website),
+          size: companySizes.includes(profile.size) ? profile.size : "",
           logo: normalizeImageDataUrl(profile.logo), cover: normalizeImageDataUrl(profile.cover),
           publicEmail: normalizeEmail(profile.publicEmail), publicPhone: normalizePhone(profile.publicPhone),
           publishContact: profile.publishContact === true,
@@ -565,6 +604,7 @@
       certifications: profile.certifications || [],
       projects: (profile.projects || []).map((project) => project.title),
       serviceArea: profile.serviceArea || "",
+      size: profile.size || "",
       website: profile.website || "",
       logo: profile.logo || "",
       cover: profile.cover || "",
@@ -941,11 +981,12 @@
     head.append(avatar, meta);
     const label = profile.local ? "Local preview" : "Sample company";
     const previewLabel = element("span", "sample-label", label);
-    const location = element("p", "company-location", profile.location);
+    const location = element("p", "company-location", profile.size ? `${profile.location} · ${profile.size}` : profile.location);
     const description = element("p", "company-description", profile.description);
     const button = element("button", "company-link", "View company profile");
     button.type = "button";
     button.setAttribute("aria-label", `View ${profile.name} sample profile`);
+    button.dataset.focusKey = `card-${profile.id}`;
     button.addEventListener("click", () => openCompany(profile, button));
     card.append(head, previewLabel, location, description);
     const ownership = ownershipLabel(profile);
@@ -955,28 +996,79 @@
     return card;
   }
 
+  function servesRegion(profile, regionId) {
+    const area = wordText(profile.serviceArea);
+    const hasAny = (text, words) => words.some((word) => text.includes(` ${word} `));
+    const nationwide = hasAny(area, nationwideWords);
+    if (regionId === "nationwide") return nationwide;
+    const region = serviceRegions.find((item) => item.id === regionId);
+    if (!region || nationwide) return true;
+    const text = `${area} ${wordText(profile.location)}`;
+    if (hasAny(area, statewideWords) && text.includes(" california ")) return true;
+    return hasAny(text, region.words);
+  }
+
+  function heldCertificationGroups(profile) {
+    const held = (profile.certifications || []).filter((cert) => !/in progress|pending|applying/i.test(cert)).map(wordText);
+    return certificationGroups.filter((group) => held.some((text) => group.words.some((word) => text.includes(` ${word} `))));
+  }
+
+  const directorySelectIds = ["directory-location", "directory-serves", "directory-ownership", "directory-certification", "directory-size"];
+
+  function refreshCertificationOptions() {
+    const select = document.getElementById("directory-certification");
+    if (!select) return;
+    const counts = new Map();
+    for (const profile of profiles) {
+      for (const group of heldCertificationGroups(profile)) counts.set(group.id, (counts.get(group.id) || 0) + 1);
+    }
+    const available = certificationGroups.filter((group) => counts.has(group.id));
+    const signature = available.map((group) => `${group.id}:${counts.get(group.id)}`).join(",");
+    if (select.dataset.signature === signature) return;
+    const current = select.value;
+    select.replaceChildren(new Option("Any certification", "All"), ...available.map((group) => new Option(`${group.label} (${counts.get(group.id)})`, group.id)));
+    select.value = available.some((group) => group.id === current) ? current : "All";
+    select.dataset.signature = signature;
+  }
+
+  function resetDirectoryFilters() {
+    currentFilter = "All";
+    const search = document.getElementById("directory-search");
+    if (search) search.value = "";
+    for (const id of directorySelectIds) {
+      const select = document.getElementById(id);
+      if (select) select.value = "All";
+    }
+  }
+
   function renderDirectory() {
     const grid = document.getElementById("company-grid");
     if (!grid) return;
+    refreshCertificationOptions();
     const search = document.getElementById("directory-search");
     const query = (search ? search.value : "").trim().toLocaleLowerCase();
-    const locationFilter = document.getElementById("directory-location")?.value || "All";
-    const ownershipFilter = document.getElementById("directory-ownership")?.value || "All";
+    const [locationFilter, servesFilter, ownershipFilter, certificationFilter, sizeFilter] = directorySelectIds.map((id) => document.getElementById(id)?.value || "All");
     const visible = profiles.filter((profile) => {
       const matchesCategory = currentFilter === "All" || profile.category === currentFilter;
       const matchesLocation = locationFilter === "All" || profile.location.toLocaleLowerCase().includes(locationFilter.toLocaleLowerCase());
+      const matchesServes = servesFilter === "All" || servesRegion(profile, servesFilter);
       const matchesOwnership = ownershipFilter === "All" || profile.ownership === ownershipFilter;
+      const matchesCertification = certificationFilter === "All" || heldCertificationGroups(profile).some((group) => group.id === certificationFilter);
+      const matchesSize = sizeFilter === "All" || profile.size === sizeFilter;
       const searchText = [profile.name, profile.category, profile.location, profile.description, profile.tagline || "", profile.serviceArea || "", profile.story || "", profile.representative || "", profile.ownership || "", ...profile.services, ...(profile.certifications || [])].join(" ").toLocaleLowerCase();
-      return matchesCategory && matchesLocation && matchesOwnership && (!query || searchText.includes(query));
+      return matchesCategory && matchesLocation && matchesServes && matchesOwnership && matchesCertification && matchesSize && (!query || searchText.includes(query));
     });
     const content = document.createDocumentFragment();
     for (const profile of visible) content.append(createCompanyCard(profile));
     if (!visible.length) {
-      content.append(element("p", "directory-empty", "No sample companies match your filters. Try another service, location, ownership label, or industry."));
+      content.append(element("p", "directory-empty", "No companies match all of these filters. Remove a filter or choose Clear filters."));
     }
     grid.replaceChildren(content);
+    const filtered = currentFilter !== "All" || Boolean(query) || [locationFilter, servesFilter, ownershipFilter, certificationFilter, sizeFilter].some((value) => value !== "All");
+    const clear = document.getElementById("directory-clear");
+    if (clear) clear.hidden = !filtered;
     const status = document.getElementById("directory-status");
-    if (status) status.textContent = `Showing ${visible.length} of ${profiles.length} sample company profiles.`;
+    if (status) status.textContent = `Showing ${visible.length} of ${profiles.length} company profiles.`;
     document.querySelectorAll(".filter-btn[data-filter]").forEach((button) => {
       const active = button.dataset.filter === currentFilter;
       button.classList.toggle("is-active", active);
@@ -1307,6 +1399,19 @@
         ? "Demo meeting request saved in this browser. Meeting scheduling will be available when BOND launches."
         : "Demo meeting request saved for this visit. Browser storage is unavailable.";
     });
+    if (profile.local) {
+      const edit = element("button", "button button-secondary company-edit", "Edit profile");
+      edit.type = "button";
+      edit.dataset.focusKey = `edit-${profile.id}`;
+      edit.setAttribute("aria-label", `Edit ${profile.name} profile`);
+      edit.addEventListener("click", () => {
+        const host = edit.closest("dialog");
+        const back = host ? dialogOpeners.get(host) : edit;
+        host?.close();
+        openEditProfile(profile, back);
+      });
+      actions.append(edit);
+    }
     actions.append(connect, save);
     if (!profile.local) actions.append(followButton(profile, "button button-secondary"));
     actions.append(meeting);
@@ -1493,7 +1598,9 @@
       link.rel = "noopener noreferrer";
       container.append(link);
     } else container.append(element("p", "profile-website-note", "Website not added"));
-    if (profile.serviceArea) container.append(element("p", "profile-service-area", `Service area: ${profile.serviceArea}`));
+    const selfReported = profile.local ? "Self-reported" : "Sample";
+    if (profile.serviceArea) container.append(element("p", "profile-service-area", `Service area: ${profile.serviceArea} · ${selfReported}`));
+    if (profile.size) container.append(element("p", "profile-service-area", `Company size: ${profile.size} · ${selfReported}`));
     if (profile.publishContact === true) {
       const email = normalizeEmail(profile.publicEmail);
       const phone = normalizePhone(profile.publicPhone);
@@ -4718,6 +4825,7 @@
         const { row, actions } = dashboardCompanyRow(profile, `${profile.category} · ${profile.location}`);
         actions.append(
           dashboardLink("Open profile", `company.html?id=${encodeURIComponent(profile.id)}`, "button button-secondary"),
+          dashboardButton("Edit profile", "button button-secondary", `edit-${profile.id}`, (button) => openEditProfile(profile, button), `Edit ${profile.name} profile`),
           dashboardButton("Post an opportunity", "button button-secondary", `post-${profile.id}`, (button) => openPostOpportunity(button, profile.id)),
           dashboardButton("Share an update", "button button-secondary", `share-${profile.id}`, (button) => openShareUpdate(button, profile.id)),
           dashboardButton("Host an event", "button button-secondary", `host-${profile.id}`, (button) => openHostEvent(button, profile.id)),
@@ -4946,6 +5054,60 @@
 
   function openJoin(opener) {
     showDialog(document.getElementById("join-dialog"), opener);
+  }
+
+  let editingProfileId = "";
+
+  function paintJoinMode(profile) {
+    const dialog = document.getElementById("join-dialog");
+    if (!dialog) return;
+    const heading = dialog.querySelector(".dialog-heading");
+    const copy = dialog.querySelector(".dialog-copy");
+    const submitLabel = dialog.querySelector("#join-form button[type=submit]")?.firstChild;
+    if (!dialog.dataset.createHeading) {
+      dialog.dataset.createHeading = heading?.textContent || "";
+      dialog.dataset.createCopy = copy?.textContent || "";
+      dialog.dataset.createSubmit = submitLabel?.textContent || "";
+    }
+    if (heading) heading.textContent = profile ? `Edit ${profile.name}.` : dialog.dataset.createHeading;
+    if (copy) copy.textContent = profile ? "Change anything and save. Leave the image, video, and photo fields empty to keep what you already uploaded. Changes stay in this browser." : dialog.dataset.createCopy;
+    if (submitLabel) submitLabel.textContent = profile ? "Save changes " : dialog.dataset.createSubmit;
+  }
+
+  function openEditProfile(profile, opener) {
+    const dialog = document.getElementById("join-dialog");
+    const form = document.getElementById("join-form");
+    if (!dialog || !form || !profile?.local) return;
+    form.reset();
+    editingProfileId = profile.id;
+    const values = {
+      website: profile.website || "", company: profile.name, industry: profile.category, description: profile.description,
+      tagline: profile.tagline || "", story: profile.story || "", services: profile.services.join(", "),
+      certifications: (profile.certifications || []).join(", "), projects: (profile.projects || []).map((project) => project.title).join("\n"),
+      location: profile.location === "Location not added" ? "" : profile.location, serviceArea: profile.serviceArea || "",
+      representative: profile.representative || "", ownership: ownershipOptions.includes(profile.ownership) ? profile.ownership : "Not specified",
+      size: profile.size || "", publicEmail: profile.publicEmail || "", publicPhone: profile.publicPhone || "",
+    };
+    for (const [name, value] of Object.entries(values)) {
+      const field = form.elements.namedItem(name);
+      if (field && field.type !== "file") field.value = value;
+    }
+    const publish = form.elements.namedItem("publishContact");
+    if (publish) publish.checked = profile.publishContact === true;
+    for (const kind of ["logo", "cover"]) {
+      const preview = document.getElementById(`${kind}-upload-preview`);
+      if (!preview || !profile[kind]) continue;
+      const image = element("img", "upload-preview-image");
+      image.src = profile[kind];
+      image.alt = kind === "logo" ? "Current logo" : "Current cover image";
+      preview.replaceChildren(image);
+    }
+    form.querySelectorAll(".profile-form-details").forEach((details) => { details.open = true; });
+    const status = document.getElementById("join-success");
+    if (status) { status.hidden = true; status.replaceChildren(); }
+    paintJoinMode(profile);
+    showDialog(dialog, opener);
+    form.elements.namedItem("company")?.focus();
   }
 
   function resolveProfile(value) {
@@ -5348,8 +5510,13 @@
       });
     });
     document.getElementById("directory-search")?.addEventListener("input", renderDirectory);
-    document.getElementById("directory-location")?.addEventListener("change", renderDirectory);
-    document.getElementById("directory-ownership")?.addEventListener("change", renderDirectory);
+    for (const id of directorySelectIds) document.getElementById(id)?.addEventListener("change", renderDirectory);
+    document.getElementById("directory-clear")?.addEventListener("click", () => {
+      resetDirectoryFilters();
+      renderDirectory();
+      document.getElementById("directory-search")?.focus();
+      announce("Filters cleared. Showing every company.");
+    });
     document.querySelectorAll(".filter-btn[data-filter]").forEach((button) => {
       button.addEventListener("click", () => {
         const next = button.dataset.filter;
@@ -5378,7 +5545,9 @@
         if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
       });
       dialog.addEventListener("close", () => {
-        const opener = dialogOpeners.get(dialog);
+        let opener = dialogOpeners.get(dialog);
+        const focusKey = opener?.dataset?.focusKey;
+        if (opener && !opener.isConnected && focusKey) opener = [...document.querySelectorAll("[data-focus-key]")].find((node) => node.dataset.focusKey === focusKey);
         if (!document.querySelector("dialog[open]") && opener?.isConnected && typeof opener.focus === "function") opener.focus();
       });
     });
@@ -5459,6 +5628,12 @@
     const uploads = form ? configureProfileUploads(form) : null;
     if (form) configureWebsiteAutofill(form);
     const showcase = form ? configureShowcaseUploads(form) : null;
+    document.getElementById("join-dialog")?.addEventListener("close", () => {
+      if (!editingProfileId) return;
+      editingProfileId = "";
+      form?.reset();
+      paintJoinMode(null);
+    });
     form?.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (uploads.busy()) return;
@@ -5490,26 +5665,47 @@
       const images = await uploads.prepare();
       const media = await showcase.prepare();
       if (submittedVersion !== uploads.version()) return;
-      const createdProfile = {
-        id: newProfileId(), name, category, location, description, representative,
-        representativeRole: "Company representative", ownership, local: true,
+      const details = {
+        name, category, location, description, representative, ownership,
         tagline: cleanText(data.get("tagline"), 100), services: parseServices(data.get("services")),
         certifications: parseCertifications(data.get("certifications")), projects: parseProjects(data.get("projects")),
         story: cleanText(data.get("story"), 1200),
         serviceArea: cleanText(data.get("serviceArea"), 150), website,
-        publicEmail, publicPhone, publishContact: data.has("publishContact"), ...images,
+        size: companySizes.includes(data.get("size")) ? data.get("size") : "",
+        publicEmail, publicPhone, publishContact: data.has("publishContact"),
       };
+      if (editingProfileId) {
+        const existing = profiles.find((profile) => profile.local && profile.id === editingProfileId);
+        if (!existing) {
+          setFormMessage("This profile is no longer saved in this browser, so it can't be edited.", true);
+          return;
+        }
+        const previous = { ...existing };
+        Object.assign(existing, details, { logo: images.logo || existing.logo || "", cover: images.cover || existing.cover || "" });
+        if (!saveLocalProfiles()) {
+          for (const key of Object.keys(existing)) delete existing[key];
+          Object.assign(existing, previous);
+          setFormMessage("Your changes could not be saved in this browser. Storage may be full; try smaller images.", true);
+          return;
+        }
+        let mediaSaved = true;
+        if (media.video || media.photos.length) {
+          const current = await readProfileMedia(existing);
+          mediaSaved = await saveProfileMedia(existing.id, { video: media.video || current.video, photos: media.photos.length ? media.photos : current.photos }).then(() => true, () => false);
+        }
+        renderDirectory();
+        renderExpoFloor();
+        renderFullCompanyProfile();
+        document.getElementById("join-dialog")?.close();
+        announce(mediaSaved ? `Changes to ${name} are saved in this browser.` : `Changes to ${name} are saved, but the new video or photos could not be stored in this browser.`);
+        return;
+      }
+      const createdProfile = { id: newProfileId(), ...details, representativeRole: "Company representative", local: true, ...images };
       profiles.push(createdProfile);
       const saved = saveLocalProfiles();
       const hasMedia = Boolean(media.video || media.photos.length);
       const mediaSaved = saved && hasMedia ? await saveProfileMedia(createdProfile.id, media).then(() => true, () => false) : !hasMedia;
-      currentFilter = "All";
-      const search = document.getElementById("directory-search");
-      if (search) search.value = "";
-      const locationFilter = document.getElementById("directory-location");
-      const ownershipFilter = document.getElementById("directory-ownership");
-      if (locationFilter) locationFilter.value = "All";
-      if (ownershipFilter) ownershipFilter.value = "All";
+      resetDirectoryFilters();
       renderDirectory();
       renderExpoFloor();
       form.reset();
