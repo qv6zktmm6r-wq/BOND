@@ -23,7 +23,8 @@
   const TURNSTILE_SCRIPT = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
   const MEDIA_BUCKET = "company-media";
   const PROFILES_TABLE = "company_profiles";
-  const PROFILE_COLUMNS = "id,owner_id,name,industry,description,location,tagline,story,services,certifications,projects,service_area,company_size,ownership,representative,website,publish_contact,public_email,public_phone,logo_path,cover_path,updated_at";
+  const OWNERS_TABLE = "company_profile_owners";
+  const PROFILE_COLUMNS = "id,name,industry,description,location,tagline,story,services,certifications,projects,service_area,company_size,ownership,representative,website,publish_contact,public_email,public_phone,logo_path,cover_path,updated_at";
   const AUTH_STORAGE_KEY = "bond.auth";
   const FLASH_KEY = "bond.flash";
   const MAX_MEMBER_PROFILES = 5;
@@ -5229,7 +5230,7 @@
     form.elements.namedItem("company")?.focus();
   }
 
-  const account = { client: null, user: null, loaded: false, error: "" };
+  const account = { client: null, user: null, ownIds: new Set(), loaded: false, error: "" };
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -5299,7 +5300,7 @@
   }
 
   function memberMediaUrl(path, version) {
-    if (typeof path !== "string" || !/^[0-9a-f-]{36}\/[0-9a-f-]{36}\/(logo|cover)\.(png|jpg|webp)$/.test(path)) return "";
+    if (typeof path !== "string" || !/^[0-9a-f-]{36}\/(logo|cover)\.(png|jpg|webp)$/.test(path)) return "";
     const stamp = Date.parse(version);
     return `${SUPABASE_URL}/storage/v1/object/public/${MEDIA_BUCKET}/${path}${Number.isFinite(stamp) ? `?v=${stamp}` : ""}`;
   }
@@ -5311,12 +5312,11 @@
     const description = cleanText(row.description, 500);
     const category = cleanText(row.industry, 40);
     if (!MEMBER_ID_PATTERN.test(id) || !name || !description || !categories.includes(category)) return null;
-    const ownerId = typeof row.owner_id === "string" ? row.owner_id : "";
     const publishContact = row.publish_contact === true;
     const logo = memberMediaUrl(row.logo_path, row.updated_at);
     const cover = memberMediaUrl(row.cover_path, row.updated_at);
     return {
-      id, remoteId: row.id, ownerId, member: true, mine: Boolean(account.user && ownerId === account.user.id),
+      id, remoteId: row.id, member: true, mine: Boolean(account.user && account.ownIds.has(row.id)),
       name, category, description,
       location: cleanText(row.location, 100) || "Location not added",
       tagline: cleanText(row.tagline, 100), story: cleanText(row.story, 1200),
@@ -5341,9 +5341,23 @@
     profiles.splice(firstDraft < 0 ? profiles.length : firstDraft, 0, profile);
   }
 
+  async function loadOwnProfileIds() {
+    if (!account.user) {
+      account.ownIds = new Set();
+      return true;
+    }
+    const { data, error } = await account.client.from(OWNERS_TABLE).select("profile_id").limit(MAX_MEMBER_PROFILES * 4);
+    if (error) return false;
+    account.ownIds = new Set((Array.isArray(data) ? data : []).map((row) => row.profile_id).filter((id) => typeof id === "string"));
+    return true;
+  }
+
   async function loadMemberProfiles() {
-    const { data, error } = await account.client.from(PROFILES_TABLE).select(PROFILE_COLUMNS).order("created_at", { ascending: true }).limit(500);
-    if (error) {
+    const [{ data, error }, ownLoaded] = await Promise.all([
+      account.client.from(PROFILES_TABLE).select(PROFILE_COLUMNS).order("created_at", { ascending: true }).limit(500),
+      loadOwnProfileIds(),
+    ]);
+    if (error || !ownLoaded) {
       account.error = "Member companies couldn't load right now. Refresh the page to try again.";
       return;
     }
@@ -5357,7 +5371,7 @@
   }
 
   function markOwnMemberProfiles() {
-    for (const profile of profiles) if (profile.member) profile.mine = Boolean(account.user && profile.ownerId === account.user.id);
+    for (const profile of profiles) if (profile.member) profile.mine = Boolean(account.user && account.ownIds.has(profile.remoteId));
   }
 
   function refreshAccountViews() {
@@ -5403,7 +5417,8 @@
         const changed = (next?.id || "") !== (account.user?.id || "");
         account.user = next;
         if (!changed) return;
-        window.setTimeout(() => {
+        window.setTimeout(async () => {
+          if (!(await loadOwnProfileIds())) account.ownIds = new Set();
           markOwnMemberProfiles();
           refreshAccountViews();
         }, 0);
@@ -5664,19 +5679,19 @@
     if (!account.client || !account.user) throw fail("Your sign-in expired. Sign in again to delete your account.");
     if (!(await signedInRecently())) throw fail("Sign in again to delete your account.", { stale: true });
     const failed = "Your account couldn't be deleted. Check your connection and try again.";
-    const userId = account.user.id;
+    if (!(await loadOwnProfileIds())) throw fail(failed);
     const bucket = account.client.storage.from(MEDIA_BUCKET);
-    const { data: folders, error: listError } = await bucket.list(userId, { limit: 100 });
-    if (listError) throw fail(failed);
     const paths = [];
-    for (const entry of folders || []) {
-      if (entry.id) {
-        paths.push(`${userId}/${entry.name}`);
-        continue;
-      }
-      const { data: files, error } = await bucket.list(`${userId}/${entry.name}`, { limit: 100 });
+    // Profile folders, plus the older "<account id>/<profile id>/" layout.
+    const pending = [...account.ownIds, account.user.id];
+    for (let index = 0; index < pending.length; index += 1) {
+      const folder = pending[index];
+      const { data: entries, error } = await bucket.list(folder, { limit: 100 });
       if (error) throw fail(failed);
-      for (const file of files || []) if (file.id) paths.push(`${userId}/${entry.name}/${file.name}`);
+      for (const entry of entries || []) {
+        if (entry.id) paths.push(`${folder}/${entry.name}`);
+        else if (folder === account.user.id) pending.push(`${folder}/${entry.name}`);
+      }
     }
     if (paths.length) {
       const { error } = await bucket.remove(paths);
@@ -5690,11 +5705,12 @@
       if (error.code === "42501" || error.status === 401) throw fail(`${partly}Your sign-in expired. Sign in again, then delete your account.`);
       throw fail(`${partly || "Your account couldn't be deleted. "}Check your connection and try again.`);
     }
-    const removed = profiles.filter((profile) => profile.member && profile.ownerId === userId);
+    const removed = profiles.filter((profile) => profile.member && account.ownIds.has(profile.remoteId));
     for (let index = profiles.length - 1; index >= 0; index -= 1) if (removed.includes(profiles[index])) profiles.splice(index, 1);
     await Promise.all(removed.map((profile) => mediaRequest("readwrite", (store) => store.delete(profile.id)).catch(() => {})));
     await account.client.auth.signOut({ scope: "local" }).catch(() => {});
     account.user = null;
+    account.ownIds = new Set();
     markOwnMemberProfiles();
     refreshAccountViews();
   }
@@ -5710,7 +5726,7 @@
 
   async function uploadMemberImage(remoteId, kind, dataUrl, previousPath) {
     const { blob, type, extension } = dataUrlToBlob(dataUrl);
-    const path = `${account.user.id}/${remoteId}/${kind}.${extension}`;
+    const path = `${remoteId}/${kind}.${extension}`;
     const bucket = account.client.storage.from(MEDIA_BUCKET);
     const { error } = await bucket.upload(path, blob, { upsert: true, contentType: type, cacheControl: "3600" });
     if (error) throw error;
@@ -5743,9 +5759,10 @@
     if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then save.");
     const table = account.client.from(PROFILES_TABLE);
     const request = existing ? table.update(memberRow(details)).eq("id", existing.remoteId) : table.insert(memberRow(details));
-    const { data, error } = await request.select().single();
+    const { data, error } = await request.select(PROFILE_COLUMNS).single();
     if (error) throw new Error(memberSaveError(error));
     let row = data;
+    account.ownIds.add(row.id);
     let imagesSaved = true;
     const paths = {};
     for (const kind of ["logo", "cover"]) {
@@ -5757,7 +5774,7 @@
       }
     }
     if (Object.keys(paths).length) {
-      const updated = await account.client.from(PROFILES_TABLE).update(paths).eq("id", row.id).select().single();
+      const updated = await account.client.from(PROFILES_TABLE).update(paths).eq("id", row.id).select(PROFILE_COLUMNS).single();
       if (updated.error) imagesSaved = false;
       else row = updated.data;
     }
@@ -5770,10 +5787,19 @@
   async function deleteOwnProfile(profile) {
     if (profile.member) {
       if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then delete.");
+      const failed = "This profile couldn't be deleted. Check your connection and try again.";
+      // Images go first: once the profile row is gone, its owner can no longer remove them.
+      const bucket = account.client.storage.from(MEDIA_BUCKET);
+      const { data: files, error: listError } = await bucket.list(profile.remoteId, { limit: 100 });
+      if (listError) throw new Error(failed);
+      const paths = (files || []).filter((file) => file.id).map((file) => `${profile.remoteId}/${file.name}`);
+      if (paths.length) {
+        const { error: removeError } = await bucket.remove(paths);
+        if (removeError) throw new Error(failed);
+      }
       const { data, error } = await account.client.from(PROFILES_TABLE).delete().eq("id", profile.remoteId).select("id");
-      if (error || !Array.isArray(data) || data.length !== 1) throw new Error("This profile couldn't be deleted. Check your connection and try again.");
-      const paths = [profile.logoPath, profile.coverPath].filter(Boolean);
-      if (paths.length) await account.client.storage.from(MEDIA_BUCKET).remove(paths).catch(() => {});
+      if (error || !Array.isArray(data) || data.length !== 1) throw new Error(failed);
+      account.ownIds.delete(profile.remoteId);
     }
     const index = profiles.indexOf(profile);
     if (index >= 0) profiles.splice(index, 1);

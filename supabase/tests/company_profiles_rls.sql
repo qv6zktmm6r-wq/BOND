@@ -36,7 +36,10 @@ begin
   perform set_config('request.jwt.claims', json_build_object('sub', user_a, 'role', 'authenticated')::text, true);
   insert into public.company_profiles (name, industry, description) values ('A Co', 'Energy', 'Member A company')
   returning id into profile_a;
+  perform set_config('role', 'postgres', true);
   insert into rls_results values ('member inserts own profile with default owner', (select owner_id = user_a from public.company_profiles where id = profile_a));
+  insert into rls_results values ('the owners list records the new profile', (select owner_id = user_a from public.company_profile_owners where profile_id = profile_a));
+  perform set_config('role', 'authenticated', true);
 
   begin
     insert into public.company_profiles (owner_id, name, industry, description) values (user_b, 'Spoof', 'Energy', 'Pretending to be B');
@@ -67,8 +70,10 @@ begin
   end;
 
   update public.company_profiles set tagline = 'Updated', owner_id = user_b where id = profile_a;
+  perform set_config('role', 'postgres', true);
   select owner_id into owner_after from public.company_profiles where id = profile_a;
-  insert into rls_results values ('owner can update but not hand the profile to someone else', owner_after = user_a);
+  perform set_config('role', 'authenticated', true);
+  insert into rls_results values ('owner can update but not hand the profile to someone else', owner_after = user_a and (select tagline = 'Updated' from public.company_profiles where id = profile_a));
 
   update public.company_profiles set id = gen_random_uuid() where id = profile_a;
   insert into rls_results values ('profile id cannot be changed', exists (select 1 from public.company_profiles where id = profile_a));
@@ -88,27 +93,42 @@ begin
   end;
 
   begin
-    update public.company_profiles set logo_path = user_a::text || '/' || gen_random_uuid()::text || '/logo.png' where id = profile_a;
+    update public.company_profiles set logo_path = gen_random_uuid()::text || '/logo.png' where id = profile_a;
     insert into rls_results values ('image path for another profile is rejected', false);
   exception when check_violation then
     insert into rls_results values ('image path for another profile is rejected', true);
   end;
 
-  update public.company_profiles set logo_path = user_a::text || '/' || profile_a::text || '/logo.webp' where id = profile_a;
+  begin
+    update public.company_profiles set logo_path = user_a::text || '/' || profile_a::text || '/logo.png' where id = profile_a;
+    insert into rls_results values ('image path containing the owner id is rejected', false);
+  exception when check_violation then
+    insert into rls_results values ('image path containing the owner id is rejected', true);
+  end;
+
+  update public.company_profiles set logo_path = profile_a::text || '/logo.webp' where id = profile_a;
   insert into rls_results values ('exact image path for own profile is accepted', (select logo_path <> '' from public.company_profiles where id = profile_a));
 
-  insert into storage.objects (bucket_id, name) values ('company-media', user_a::text || '/' || profile_a::text || '/logo.webp');
+  insert into rls_results values ('member sees their own profile in the owners list', exists (select 1 from public.company_profile_owners where profile_id = profile_a));
+  begin
+    perform owner_id from public.company_profiles limit 1;
+    insert into rls_results values ('members cannot read profile owners', false);
+  exception when insufficient_privilege then
+    insert into rls_results values ('members cannot read profile owners', true);
+  end;
+
+  insert into storage.objects (bucket_id, name) values ('company-media', profile_a::text || '/logo.webp');
   insert into rls_results values ('member uploads media for own profile', true);
 
   begin
-    insert into storage.objects (bucket_id, name) values ('company-media', user_a::text || '/' || gen_random_uuid()::text || '/logo.png');
+    insert into storage.objects (bucket_id, name) values ('company-media', gen_random_uuid()::text || '/logo.png');
     insert into rls_results values ('upload for a profile that is not yours is rejected', false);
   exception when insufficient_privilege then
     insert into rls_results values ('upload for a profile that is not yours is rejected', true);
   end;
 
   begin
-    insert into storage.objects (bucket_id, name) values ('company-media', user_a::text || '/' || profile_a::text || '/extra-file.png');
+    insert into storage.objects (bucket_id, name) values ('company-media', profile_a::text || '/extra-file.png');
     insert into rls_results values ('upload with an unexpected file name is rejected', false);
   exception when insufficient_privilege then
     insert into rls_results values ('upload with an unexpected file name is rejected', true);
@@ -132,6 +152,31 @@ begin
   get diagnostics affected = row_count;
   insert into rls_results values ('other member cannot delete', affected = 0);
   insert into rls_results values ('other member can still read it', exists (select 1 from public.company_profiles where id = profile_a));
+  insert into rls_results values ('other member cannot see who owns it', not exists (select 1 from public.company_profile_owners where profile_id = profile_a));
+  begin
+    insert into storage.objects (bucket_id, name) values ('company-media', profile_a::text || '/cover.png');
+    insert into rls_results values ('other member cannot upload images to it', false);
+  exception when insufficient_privilege then
+    insert into rls_results values ('other member cannot upload images to it', true);
+  end;
+
+  perform set_config('role', 'anon', true);
+  perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+  insert into rls_results values ('visitors can read published profile details', exists (select name, logo_path from public.company_profiles where id = profile_a));
+  begin
+    perform owner_id from public.company_profiles limit 1;
+    insert into rls_results values ('visitors cannot read profile owners', false);
+  exception when insufficient_privilege then
+    insert into rls_results values ('visitors cannot read profile owners', true);
+  end;
+  begin
+    perform 1 from public.company_profile_owners limit 1;
+    insert into rls_results values ('visitors cannot read the owners list', false);
+  exception when insufficient_privilege then
+    insert into rls_results values ('visitors cannot read the owners list', true);
+  end;
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', user_b, 'role', 'authenticated')::text, true);
 
   -- Per-account limit of 5 profiles.
   for i in 1..5 loop
@@ -189,7 +234,9 @@ begin
 
   perform set_config('request.jwt.claims', json_build_object('sub', user_a, 'role', 'authenticated',
     'amr', json_build_array(json_build_object('method', 'otp', 'timestamp', extract(epoch from now())::bigint - 60)))::text, true);
-  insert into public.company_profiles (name, industry, description) values ('A Again', 'Energy', 'Member A company');
+  insert into public.company_profiles (name, industry, description) values ('A Again', 'Energy', 'Member A company')
+  returning id into profile_a;
+  insert into storage.objects (bucket_id, name) values ('company-media', profile_a::text || '/cover.png');
   begin
     perform public.delete_my_account();
     insert into rls_results values ('account deletion waits until uploaded images are removed', false);
@@ -201,7 +248,7 @@ begin
   perform set_config('role', 'authenticated', true);
 
   perform set_config('storage.allow_delete_query', 'true', true);
-  delete from storage.objects where bucket_id = 'company-media' and name like user_a::text || '/%';
+  delete from storage.objects where bucket_id = 'company-media' and name like profile_a::text || '/%';
   perform set_config('storage.allow_delete_query', 'false', true);
   perform public.delete_my_account();
   perform set_config('role', 'postgres', true);

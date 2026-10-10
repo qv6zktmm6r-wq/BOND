@@ -137,7 +137,7 @@ Working in the preview: rooms are saved in the visitor's browser, the project re
 - [x] BOND's own email sender: sign-in emails go out through Resend from `no-reply@joinbond.world` (domain verified with DKIM, SPF, and DMARC records at Namecheap), with BOND-branded sign-in emails
 - [x] Bot protection on the sign-in form (Cloudflare Turnstile, checked by Supabase on every sign-in request); sign-in emails capped at 30 an hour project-wide
 - [x] Delete-my-account option (Account dialog, confirmed by typing your email) that also removes the account's company profiles and their logo and cover files from storage
-- [ ] Decide whether profile owner ids stay publicly readable (today they show which companies share one account)
+- [x] Profile owners are private: visitors can't tell which company profiles share one account; only the signed-in owner sees which profiles are theirs
 - [ ] Representative sign-in and roles (several people managing one company)
 - [~] Database for profiles (done on `feature/accounts`), messages, meetings, opportunities, and follows (still in the browser)
 - [ ] Business claiming and verification; certification verification (VOSB/SDVOSB and others)
