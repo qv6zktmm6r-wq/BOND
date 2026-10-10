@@ -19,7 +19,7 @@
   const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_Ciioz3lRi0AzFp1namtbzg_MoTz3Hbj";
   const SUPABASE_SCRIPT = "vendor/supabase-2.117.3.js";
   // Cloudflare Turnstile site key (public). Turnstile only accepts it on the hostnames listed for the widget in Cloudflare.
-  const TURNSTILE_SITE_KEY = "";
+  const TURNSTILE_SITE_KEY = "0x4AAAAAAFTZ6LSf6m17yJr_";
   const TURNSTILE_SCRIPT = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
   const MEDIA_BUCKET = "company-media";
   const PROFILES_TABLE = "company_profiles";
@@ -29,7 +29,7 @@
   const MAX_MEMBER_PROFILES = 5;
   const MEMBER_ID_PATTERN = /^m-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   // Public sign-in on joinbond.world is a launch decision; previews and local development always have accounts.
-  const PUBLIC_ACCOUNTS = false;
+  const PUBLIC_ACCOUNTS = true;
   const ACCOUNTS_ENABLED = PUBLIC_ACCOUNTS || !["joinbond.world", "www.joinbond.world"].includes(window.location.hostname);
   const MAX_ROOMS = 12;
   const MAX_ROOM_MEMBERS = 8;
