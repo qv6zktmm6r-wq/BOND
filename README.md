@@ -62,13 +62,25 @@ Then open `http://127.0.0.1:3017/expos.html?host` in one tab and `http://127.0.0
 - `docs/original-site-text-snapshot.txt` — earlier content reference.
 - `docs/EXPO-CHECKLIST.md` — the online EXPO roadmap checklist we work through in order.
 
+## Accounts and company profiles (Supabase)
+
+Company sign-in and published profiles run on [Supabase](https://supabase.com) (organization "BOND", project `bond`, free plan, region us-west-1).
+
+- Sign-in uses one-time email links (no passwords). The same link creates an account the first time.
+- Signed-in members publish company profiles to the `company_profiles` table; everyone can read them, and only the owner can change or delete their own (row-level security, at most 5 profiles per account). Logos and covers go to the public `company-media` storage bucket under the owner's folder (PNG, JPEG, or WebP, up to 1 MB).
+- Intro videos and project photos still stay in the browser (IndexedDB).
+- Browser drafts made before signing in can be moved into the account from the dashboard or the Account dialog.
+- `dist/app.js` loads `dist/vendor/supabase-2.117.3.js` (MIT, npm integrity verified, served from this site) only where accounts are switched on. Accounts are on for local development and Vercel previews, and off on joinbond.world until BOND has its own email sender (`PUBLIC_ACCOUNTS` in `dist/app.js`).
+- The publishable key in `dist/app.js` is public by design. The secret key and database password live only in macOS Keychain under project `bond`.
+- `supabase/migrations/` holds the schema, policies, and storage rules; apply with `supabase db push` after `supabase link --project-ref mdifopcbcvyzfoflnoxz`. `supabase/tests/company_profiles_rls.sql` checks the access rules inside a transaction that is rolled back: `supabase db query --linked -f supabase/tests/company_profiles_rls.sql`.
+
 ## Hosting and current behavior
 
 BOND is hosted on Vercel. The repository is no longer linked to ChatGPT Sites (the `.openai/hosting.json` project file was removed). The original ChatGPT Site at https://joinbond.mejia1604.chatgpt.site stays up until it is unpublished from the ChatGPT account; do that only after the Vercel site is live.
 
 The `og:url` and `og:image` share-preview tags in `dist/index.html`, `dist/expos.html`, and `dist/company.html` point at https://joinbond.world. Link previews will only show images once that domain is connected to the Vercel project.
 
-The current implementation is an interactive static prototype with fictional demo companies and browser-local behavior. Real shared accounts, persistent messaging, and live broadcasting still require backend implementation.
+The current implementation is an interactive static prototype with fictional demo companies and browser-local behavior. Company accounts and published profiles are built on Supabase (see above) and switched on for previews; persistent messaging, meetings, opportunities, and follows still live in the browser.
 
 Routes:
 

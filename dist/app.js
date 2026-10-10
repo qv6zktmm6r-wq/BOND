@@ -15,6 +15,18 @@
   const EVENTS_KEY = "bond.demo.events";
   const RSVPS_KEY = "bond.demo.rsvps";
   const ROOMS_KEY = "bond.demo.rooms";
+  const SUPABASE_URL = "https://mdifopcbcvyzfoflnoxz.supabase.co";
+  const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_Ciioz3lRi0AzFp1namtbzg_MoTz3Hbj";
+  const SUPABASE_SCRIPT = "vendor/supabase-2.117.3.js";
+  const MEDIA_BUCKET = "company-media";
+  const PROFILES_TABLE = "company_profiles";
+  const AUTH_STORAGE_KEY = "bond.auth";
+  const FLASH_KEY = "bond.flash";
+  const MAX_MEMBER_PROFILES = 5;
+  const MEMBER_ID_PATTERN = /^m-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  // Supabase's built-in sender only emails the project's team, so public sign-in waits for BOND's own email sender.
+  const PUBLIC_ACCOUNTS = false;
+  const ACCOUNTS_ENABLED = PUBLIC_ACCOUNTS || !["joinbond.world", "www.joinbond.world"].includes(window.location.hostname);
   const MAX_ROOMS = 12;
   const MAX_ROOM_MEMBERS = 8;
   const MAX_ROOM_MESSAGES = 120;
@@ -522,7 +534,7 @@
   }
 
   async function readProfileMedia(profile) {
-    if (!profile.local) return { video: null, photos: [] };
+    if (!isOwn(profile)) return { video: null, photos: [] };
     const stored = await mediaRequest("readonly", (store) => store.get(profile.id)).catch(() => null);
     const video = stored?.video instanceof Blob && VIDEO_TYPES.includes(stored.video.type) && stored.video.size <= MAX_VIDEO_BYTES ? stored.video : null;
     const photos = Array.isArray(stored?.photos) ? stored.photos.map(normalizeImageDataUrl).filter(Boolean).slice(0, MAX_PROJECT_PHOTOS) : [];
@@ -641,8 +653,18 @@
     }
   }
 
+
+  // Member profiles arrive from the database after stored records are read, so their ids are accepted by shape.
   function knownProfileId(id) {
-    return typeof id === "string" && profiles.some((profile) => profile.id === id);
+    return typeof id === "string" && (MEMBER_ID_PATTERN.test(id) || profiles.some((profile) => profile.id === id));
+  }
+
+  function isOwn(profile) {
+    return Boolean(profile && (profile.local || profile.mine));
+  }
+
+  function byOrigin(profile, local, member, sample) {
+    return profile.local ? local : profile.member ? member : sample;
   }
 
   function readStoredIds(key) {
@@ -979,7 +1001,7 @@
     heading.id = headingId;
     meta.append(heading, element("p", "company-category", profile.category));
     head.append(avatar, meta);
-    const label = profile.local ? "Local preview" : "Sample company";
+    const label = byOrigin(profile, "Local preview", profile.mine ? "Your company · Member" : "BOND member", "Sample company");
     const previewLabel = element("span", "sample-label", label);
     const location = element("p", "company-location", profile.size ? `${profile.location} · ${profile.size}` : profile.location);
     const description = element("p", "company-description", profile.description);
@@ -1046,6 +1068,11 @@
     if (!grid) return;
     refreshCertificationOptions();
     const search = document.getElementById("directory-search");
+    if (profiles.some((profile) => profile.member)) {
+      const note = document.getElementById("directory-status")?.previousElementSibling;
+      if (note) note.textContent = "BOND members and sample companies.";
+      document.querySelector("label[for=\"directory-search\"]")?.replaceChildren("Search businesses");
+    }
     const query = (search ? search.value : "").trim().toLocaleLowerCase();
     const [locationFilter, servesFilter, ownershipFilter, certificationFilter, sizeFilter] = directorySelectIds.map((id) => document.getElementById(id)?.value || "All");
     const visible = profiles.filter((profile) => {
@@ -1141,6 +1168,10 @@
   function renderExpoFloor() {
     const grid = document.getElementById("floor-booths");
     if (!grid) return;
+    if (profiles.some((profile) => profile.member)) {
+      const note = document.getElementById("floor-status")?.previousElementSibling;
+      if (note) note.textContent = "BOND members and sample companies. Availability is a sample.";
+    }
     const filters = document.getElementById("floor-filters");
     if (filters && !filters.childElementCount) {
       const halls = ["All", ...categories.filter((category) => profiles.some((profile) => profile.category === category))];
@@ -1170,7 +1201,7 @@
       const logo = element("span", "company-avatar booth-logo");
       logo.classList.toggle("has-uploaded-logo", Boolean(profile.logo));
       logo.append(companyLogo(profile));
-      booth.append(element("span", "booth-number", profile.local ? `${boothNumber(profile)} · Your booth` : boothNumber(profile)), logo, element("strong", "booth-name", profile.name), element("span", "booth-category", profile.category), presenceBadge(profile));
+      booth.append(element("span", "booth-number", isOwn(profile) ? `${boothNumber(profile)} · Your booth` : boothNumber(profile)), logo, element("strong", "booth-name", profile.name), element("span", "booth-category", profile.category), presenceBadge(profile));
       booth.addEventListener("click", () => openBooth(profile, booth));
       content.append(booth);
     }
@@ -1185,7 +1216,7 @@
     const body = document.getElementById("company-dialog-body");
     if (!dialog || !body) return;
     body.replaceChildren();
-    body.append(element("p", "dialog-kicker", `Booth ${boothNumber(profile)} · ${profile.local ? "Your local preview" : "Sample company"}`));
+    body.append(element("p", "dialog-kicker", `Booth ${boothNumber(profile)} · ${byOrigin(profile, "Your local preview", "BOND member", "Sample company")}`));
     const title = element("h2", "dialog-heading", profile.name);
     title.id = "company-dialog-title";
     dialog.setAttribute("aria-labelledby", title.id);
@@ -1399,7 +1430,7 @@
         ? "Demo meeting request saved in this browser. Meeting scheduling will be available when BOND launches."
         : "Demo meeting request saved for this visit. Browser storage is unavailable.";
     });
-    if (profile.local) {
+    if (isOwn(profile)) {
       const edit = element("button", "button button-secondary company-edit", "Edit profile");
       edit.type = "button";
       edit.dataset.focusKey = `edit-${profile.id}`;
@@ -1413,9 +1444,9 @@
       actions.append(edit);
     }
     actions.append(connect, save);
-    if (!profile.local) actions.append(followButton(profile, "button button-secondary"));
+    if (!isOwn(profile)) actions.append(followButton(profile, "button button-secondary"));
     actions.append(meeting);
-    if (!profile.local) {
+    if (!isOwn(profile)) {
       const invite = element("button", "button button-secondary company-room", "Invite to a room");
       invite.type = "button";
       invite.setAttribute("aria-label", `Invite ${profile.name} to an Opportunity Room`);
@@ -1533,7 +1564,7 @@
     const { inDialog = false, showHeading = true, onConnect = null } = options;
     container.replaceChildren();
     if (showHeading) {
-      container.append(element("p", "dialog-kicker", profile.local ? "Your local sample profile" : "Sample company profile"));
+      container.append(element("p", "dialog-kicker", byOrigin(profile, "Your local sample profile", profile.mine ? "Your company profile" : "BOND member profile", "Sample company profile")));
       const title = element(inDialog ? "h2" : "h3", "dialog-heading", profile.name);
       if (inDialog) {
         title.id = "company-dialog-title";
@@ -1550,12 +1581,12 @@
     }
     if (profile.tagline) container.append(element("p", "profile-tagline", profile.tagline));
     container.append(element("p", "company-category", profile.category));
-    container.append(element("p", "company-location", profile.location === "Location not added" ? profile.location : `${profile.location} · ${profile.local ? "Local preview" : "Sample location"}`));
+    container.append(element("p", "company-location", profile.location === "Location not added" || profile.member ? profile.location : `${profile.location} · ${profile.local ? "Local preview" : "Sample location"}`));
     container.append(element("p", "dialog-copy", profile.description));
     const ownership = ownershipLabel(profile);
     if (ownership) {
       container.append(ownership);
-      container.append(element("p", "ownership-note", "Self-reported ownership label. This sample does not assert VOSB or SDVOSB certification."));
+      container.append(element("p", "ownership-note", profile.member ? "Self-reported ownership label. BOND has not verified it yet." : "Self-reported ownership label. This sample does not assert VOSB or SDVOSB certification."));
     }
     if (profile.services.length) {
       container.append(element("h4", "detail-label", "Capabilities"), serviceTags(profile));
@@ -1563,19 +1594,19 @@
     if (profile.certifications?.length) {
       const certifications = element("div", "company-services");
       for (const name of profile.certifications) certifications.append(element("span", "service-tag", name));
-      container.append(element("h4", "detail-label", profile.local ? "Certifications · Self-reported" : "Certifications · Sample, not verified"), certifications);
+      container.append(element("h4", "detail-label", profile.local || profile.member ? "Certifications · Self-reported" : "Certifications · Sample, not verified"), certifications);
     }
     if (profile.story) {
       const story = element("section", "company-story");
-      story.append(element("h4", "detail-label", profile.local ? "Company story · Local preview" : "Company story · Sample"));
+      story.append(element("h4", "detail-label", byOrigin(profile, "Company story · Local preview", "Company story", "Company story · Sample")));
       if (profile.founded) story.append(element("p", "company-founded", `Founded ${profile.founded} · Demo company history`));
       story.append(element("p", "dialog-copy", profile.story));
       container.append(story);
     }
     const representative = element("section", "representative-card");
-    representative.append(element("h4", "detail-label", "Authorized representative · Demo"));
+    representative.append(element("h4", "detail-label", profile.member ? "Company representative · Self-reported" : "Authorized representative · Demo"));
     representative.append(element("p", "representative-name", profile.representative || "Representative not specified"));
-    representative.append(element("p", "representative-role", `${profile.representativeRole || "Company representative"} · Sample role`));
+    representative.append(element("p", "representative-role", profile.member ? profile.representativeRole || "Company representative" : `${profile.representativeRole || "Company representative"} · Sample role`));
     container.append(representative);
     const contact = element("div", "profile-contact");
     renderProfileContact(profile, contact);
@@ -1598,7 +1629,7 @@
       link.rel = "noopener noreferrer";
       container.append(link);
     } else container.append(element("p", "profile-website-note", "Website not added"));
-    const selfReported = profile.local ? "Self-reported" : "Sample";
+    const selfReported = profile.local || profile.member ? "Self-reported" : "Sample";
     if (profile.serviceArea) container.append(element("p", "profile-service-area", `Service area: ${profile.serviceArea} · ${selfReported}`));
     if (profile.size) container.append(element("p", "profile-service-area", `Company size: ${profile.size} · ${selfReported}`));
     if (profile.publishContact === true) {
@@ -1627,9 +1658,17 @@
     const profile = requestedId ? resolveProfile(requestedId) : null;
     if (!profile) {
       const notice = element("section", "profile-not-found");
+      const memberId = Boolean(requestedId?.startsWith("m-"));
+      if (memberId && ACCOUNTS_ENABLED && !account.loaded && !account.error) {
+        notice.setAttribute("aria-busy", "true");
+        notice.append(element("p", "dialog-kicker", "Company profile"), element("h1", "", "Loading this company profile…"));
+        container.append(notice);
+        return;
+      }
       notice.append(element("p", "dialog-kicker", "Company preview"), element("h1", "", requestedId ? "This profile is unavailable here." : "Choose a company profile."));
       notice.append(element("p", "dialog-copy", requestedId?.startsWith("local-")
         ? "Local preview profiles are available only in the browser where they were created. This profile is not available in this browser."
+        : memberId ? (account.error || "This company profile could not be found. It may have been removed. Explore the directory to choose a company.")
         : requestedId ? "This sample company profile could not be found. Explore the directory to choose a company." : "Explore the company directory and open a full profile to see the business, its capabilities, and ways to connect."));
       const directory = element("a", "button button-primary", "Explore company directory");
       directory.href = "index.html#businesses";
@@ -1641,7 +1680,7 @@
     recordView(profile);
     const cover = element("div", "company-cover");
     const coverImage = element("img", "");
-    const coverNote = element("p", "company-cover-note", profile.cover ? "Uploaded cover · Local preview" : "Concept cover · Design preview");
+    const coverNote = element("p", "company-cover-note", profile.cover ? byOrigin(profile, "Uploaded cover · Local preview", "Uploaded cover", "Uploaded cover") : "Concept cover · Design preview");
     coverImage.src = profile.cover || "assets/expo-hero.png";
     coverImage.alt = profile.cover ? `${profile.name} uploaded cover` : "Concept image for a BOND company profile";
     coverImage.addEventListener("error", () => {
@@ -1661,7 +1700,7 @@
     meta.append(element("span", "", profile.category), element("span", "", profile.location));
     const ownership = ownershipLabel(profile);
     if (ownership) meta.append(ownership);
-    identityCopy.append(meta, element("span", "profile-preview-status", profile.local ? "Local preview · Stored in this browser" : "Sample company · Design preview"));
+    identityCopy.append(meta, element("span", "profile-preview-status", byOrigin(profile, "Local preview · Stored in this browser", "BOND member · Not verified yet", "Sample company · Design preview")));
     identity.append(brandLogo, identityCopy);
     const layout = element("div", "profile-main-layout");
     const content = element("div", "profile-content");
@@ -1699,7 +1738,7 @@
     }
     renderCertifications(profile, section("Certifications & licenses", "", "certifications", "Certifications"));
     renderPortfolio(profile, section("Projects", "", "portfolio", "Projects"));
-    const story = section("Company story", profile.story || "Company history has not been added to this local preview.", "story", "Story");
+    const story = section("Company story", profile.story || (profile.local ? "Company history has not been added to this local preview." : "Company history has not been added yet."), "story", "Story");
     if (profile.founded) story.append(element("p", "company-founded", `Founded ${profile.founded} · Demo company history`));
     const representative = section("Company representative", "Representative identity and authorization are illustrated as a demo role here.");
     representative.append(element("p", "representative-name", profile.representative || "Representative not added"));
@@ -1788,8 +1827,9 @@
     const note = element("p", "intro-note");
     note.setAttribute("role", "status");
     container.append(frame, note);
-    const sampleNote = profile.local
-      ? "No introduction video yet. Add one when you create a profile draft; it stays in this browser."
+    const sampleNote = isOwn(profile)
+      ? "No introduction video yet. Add one with Edit profile; videos stay in this browser until BOND launches video hosting."
+      : profile.member ? "This company hasn't added an introduction video yet."
       : "Sample profile: no video is uploaded. Companies add a 30-second introduction here. Video hosting is planned for launch.";
     play.addEventListener("click", () => { note.textContent = sampleNote; });
     readProfileMedia(profile).then(({ video }) => {
@@ -1816,7 +1856,7 @@
     const list = element("ul", "cert-list");
     for (const name of certifications) {
       const item = element("li", "cert-item");
-      item.append(element("span", "cert-name", name), element("span", "cert-badge", profile.local ? "Self-reported" : "Sample · Not verified"));
+      item.append(element("span", "cert-name", name), element("span", "cert-badge", profile.local || profile.member ? "Self-reported" : "Sample · Not verified"));
       list.append(item);
     }
     container.append(list, element("p", "ownership-note", "BOND will check licenses and certifications before showing a Verified badge. Verification is planned for launch."));
@@ -1845,7 +1885,7 @@
         const caption = element("figcaption");
         caption.append(element("h3", "", project.title));
         if (project.summary) caption.append(element("p", "", project.summary));
-        caption.append(element("span", "portfolio-label", profile.local ? "Your project · Local preview" : "Sample project · Illustrative photo"));
+        caption.append(element("span", "portfolio-label", byOrigin(profile, "Your project · Local preview", "Project · Self-reported", "Sample project · Illustrative photo")));
         card.append(caption);
         grid.append(card);
       }
@@ -1853,7 +1893,7 @@
     };
     container.append(grid, empty);
     fill(profile.projects || []);
-    if (!profile.local) return;
+    if (!isOwn(profile)) return;
     readProfileMedia(profile).then(({ photos }) => {
       if (!photos.length) return;
       const titles = (profile.projects || []).map((project) => project.title);
@@ -1876,12 +1916,12 @@
     image.alt = project.summary || project.title;
     body.append(title, image);
     if (project.summary) body.append(element("p", "dialog-copy", project.summary));
-    body.append(element("p", "ownership-note", profile.local ? "Uploaded to this browser only." : "Illustrative photo for a sample company."));
+    body.append(element("p", "ownership-note", isOwn(profile) ? "Uploaded to this browser only." : "Illustrative photo for a sample company."));
     showDialog(dialog, opener);
   }
 
   function recordView(profile) {
-    if (profile.local) return;
+    if (isOwn(profile)) return;
     const index = recentlyViewed.indexOf(profile.id);
     if (index !== -1) recentlyViewed.splice(index, 1);
     recentlyViewed.unshift(profile.id);
@@ -2118,7 +2158,7 @@
   }
 
   function visitorName() {
-    const own = profiles.filter((profile) => profile.local).at(-1);
+    const own = profiles.filter(isOwn).at(-1);
     if (!own) return "Guest";
     return own.representative ? `${own.representative} · ${own.name}` : own.name;
   }
@@ -2927,7 +2967,7 @@
     const select = element("select");
     select.id = id;
     select.name = "company";
-    const own = profiles.filter((profile) => profile.local);
+    const own = profiles.filter(isOwn);
     if (includeNone) select.append(new Option("Just me (no company yet)", ""));
     if (own.length) {
       const group = element("optgroup");
@@ -3026,10 +3066,10 @@
     list.replaceChildren();
     const items = allOpportunities().filter((opportunity) => opportunity.companyId === profile.id);
     list.append(element("p", "dialog-copy", items.length
-      ? profile.local ? "Requests this company posted. Saved in this browser." : "Opportunities connected to this sample company."
+      ? isOwn(profile) ? "Requests this company posted. Saved in this browser." : "Opportunities connected to this company."
       : "No opportunity posts yet."));
     for (const opportunity of items) list.append(opportunityCard(opportunity, { thumbnail: false }));
-    if (profile.local) {
+    if (isOwn(profile)) {
       const post = element("button", "button button-secondary", "Post an opportunity");
       post.type = "button";
       post.addEventListener("click", () => openPostOpportunity(post, profile.id));
@@ -3152,7 +3192,7 @@
       container.append(element("p", "form-hint", "No responses yet. Until accounts launch, only responses sent from this browser appear here."));
     }
     const form = element("form", "chat-form opportunity-response-form");
-    const own = profiles.filter((item) => item.local && item.id !== opportunity.companyId);
+    const own = profiles.filter((item) => isOwn(item) && item.id !== opportunity.companyId);
     const picker = companyPicker(`respond-as-${opportunity.id}`, "Respond as", { includeNone: true, selected: own[0]?.id || "" });
     const messageId = `respond-message-${opportunity.id}-${++chatSequence}`;
     const label = element("label", "chat-label", "Message (optional)");
@@ -3280,7 +3320,7 @@
     name.addEventListener("click", () => openCompany(profile, name));
     who.append(name, element("span", "feed-meta", `${profile.category} · ${timeAgo(post.at)} · ${post.local ? "Shared in this browser" : "Sample update"}`));
     head.append(avatar, who);
-    if (showCompany && !profile.local) head.append(followButton(profile, "button button-secondary feed-follow"));
+    if (showCompany && !isOwn(profile)) head.append(followButton(profile, "button button-secondary feed-follow"));
     card.setAttribute("aria-label", `${postTypes[post.type]} from ${profile.name}`);
     card.append(head, element("span", "feed-type", postTypes[post.type]), element("p", "feed-text", post.text));
     const actions = element("div", "feed-actions");
@@ -3300,7 +3340,7 @@
       const snippet = post.text.length > 60 ? `${post.text.slice(0, 60).trim()}…` : post.text;
       openConversation(profile, talk, `Hi ${firstName}, I saw your update: "${snippet}" `);
     });
-    if (!profile.local) actions.append(talk);
+    if (!isOwn(profile)) actions.append(talk);
     if (post.local) {
       const remove = element("button", "danger-link", "Remove");
       remove.type = "button";
@@ -3367,10 +3407,10 @@
     const posts = allPosts().filter((post) => post.companyId === profile.id);
     const intro = element("div", "company-posts-intro");
     intro.append(element("p", "dialog-copy", posts.length ? "Projects, capabilities, partnerships, hiring, and events from this company." : "No updates yet."));
-    if (!profile.local) intro.append(followButton(profile, "button button-secondary"));
+    if (!isOwn(profile)) intro.append(followButton(profile, "button button-secondary"));
     list.append(intro);
     posts.forEach((post) => list.append(feedPostCard(post, { showCompany: false })));
-    if (profile.local) {
+    if (isOwn(profile)) {
       const share = element("button", "button button-secondary", "Share an update");
       share.type = "button";
       share.addEventListener("click", () => openShareUpdate(share, profile.id));
@@ -3518,9 +3558,9 @@
     const events = allEvents().filter((event) => event.companyId === profile.id && eventIsUpcoming(event));
     list.append(element("p", "dialog-copy", events.length
       ? "Demos, workshops, open houses, and Q&As this company is hosting."
-      : profile.local ? "You haven't scheduled an event yet." : "No upcoming events."));
+      : isOwn(profile) ? "You haven't scheduled an event yet." : "No upcoming events."));
     events.forEach((event) => list.append(eventCard(event, { showHost: false })));
-    if (profile.local) {
+    if (isOwn(profile)) {
       const host = element("button", "button button-secondary", "Host an event");
       host.type = "button";
       host.addEventListener("click", () => openHostEvent(host, profile.id));
@@ -3812,7 +3852,7 @@
   }
 
   function verificationLabel(profile) {
-    return profile.local ? "Self-reported · Not verified yet" : "Sample company · Not verified";
+    return profile.local || profile.member ? "Self-reported · Not verified yet" : "Sample company · Not verified";
   }
 
   function scoreCompanyForNeed(profile, need, { briefTerms, city, preference }) {
@@ -3836,7 +3876,7 @@
     const briefTerms = new Set([...matchTerms({ description: brief, services: [] })].filter((term) => !briefStopwords.has(term)));
     const context = { briefTerms, city: city.split(",")[0].trim().toLocaleLowerCase(), preference };
     const skip = new Set(exclude);
-    const candidates = profiles.filter((profile) => !profile.local && !skip.has(profile.id));
+    const candidates = profiles.filter((profile) => !isOwn(profile) && !skip.has(profile.id));
     const members = new Map();
     const extras = new Map();
     const uncovered = [];
@@ -3872,7 +3912,7 @@
       for (const match of findMatches(lead)) {
         if (extras.size >= 4) break;
         if (match.type === "Customer" || match.reasons[0] === "Overlapping capabilities") continue;
-        if (match.profile.local || skip.has(match.profile.id) || members.has(match.profile.id) || extras.has(match.profile.id)) continue;
+        if (isOwn(match.profile) || skip.has(match.profile.id) || members.has(match.profile.id) || extras.has(match.profile.id)) continue;
         const reason = match.reasons[0];
         extras.set(match.profile.id, { profile: match.profile, needs: [], score: match.score, services: [],
           reasons: [`${matchTypes[match.type]} for ${lead.name}: ${reason.charAt(0).toLocaleLowerCase()}${reason.slice(1)}`] });
@@ -4049,7 +4089,7 @@
     title.maxLength = 80;
     title.required = true;
     title.value = roomTitleFrom(state.brief);
-    const owner = companyPicker("room-owner", "Opening the room as", { includeNone: true, selected: profiles.find((profile) => profile.local)?.id || "" });
+    const owner = companyPicker("room-owner", "Opening the room as", { includeNone: true, selected: profiles.find(isOwn)?.id || "" });
     const submit = element("button", "button button-primary", "Open the Opportunity Room");
     submit.type = "submit";
     const createStatus = element("p", "chat-status");
@@ -4189,7 +4229,7 @@
     const title = field("input", "invite-room-title", "Project name", { maxLength: 80, required: true, placeholder: "Fleet management platform" });
     const brief = field("textarea", "invite-room-brief", "What's the project? (optional)", { rows: 3, maxLength: 1500, placeholder: "What you're building, where, and the help you need." });
     brief.classList.add("chat-input");
-    const owner = companyPicker("invite-room-owner", "Opening the room as", { includeNone: true, selected: profiles.find((entry) => entry.local)?.id || "" });
+    const owner = companyPicker("invite-room-owner", "Opening the room as", { includeNone: true, selected: profiles.find(isOwn)?.id || "" });
     form.append(owner.label, owner.select);
     const status = element("p", "chat-status");
     status.setAttribute("role", "status");
@@ -4427,7 +4467,7 @@
         list.append(item);
       });
       body.append(list);
-      const available = profiles.filter((profile) => !profile.local && profile.id !== room.owner && !memberIds().includes(profile.id));
+      const available = profiles.filter((profile) => !isOwn(profile) && profile.id !== room.owner && !memberIds().includes(profile.id));
       if (room.members.length >= MAX_ROOM_MEMBERS) {
         body.append(element("p", "room-copy", `A room holds up to ${MAX_ROOM_MEMBERS} companies.`));
       } else if (available.length) {
@@ -4780,7 +4820,7 @@
     if (!container) return;
     const activeKey = document.activeElement?.dataset?.dashKey;
     container.replaceChildren();
-    const own = profiles.filter((profile) => profile.local);
+    const own = profiles.filter(isOwn);
     const conversations = profiles
       .map((profile) => ({ profile, messages: messagesByCompany[profile.id] || [] }))
       .filter((entry) => entry.messages.length)
@@ -4797,7 +4837,9 @@
 
     const head = element("header", "dashboard-head");
     head.append(element("p", "dialog-kicker", "Your BOND"), element("h1", "", "Your dashboard"));
-    head.append(element("p", "dialog-copy", "Your companies, connections, messages, opportunities, and events in one place. Everything here is saved in this browser; accounts that sync across devices come with BOND's launch."));
+    head.append(element("p", "dialog-copy", account.user
+      ? "Your companies, connections, messages, opportunities, and events in one place. Published companies are saved to your account; everything else is still saved in this browser for now."
+      : "Your companies, connections, messages, opportunities, and events in one place. Everything here is saved in this browser; accounts that sync across devices come with BOND's launch."));
     const stats = element("ul", "dashboard-stats");
     stats.setAttribute("aria-label", "Summary");
     for (const [count, label, anchor] of [
@@ -4818,11 +4860,27 @@
     }
     container.append(head, stats);
 
+    if (ACCOUNTS_ENABLED) {
+      const panel = element("section", "dashboard-account");
+      panel.setAttribute("aria-label", "Your account");
+      if (account.user) {
+        panel.append(element("p", "dialog-copy", `Signed in as ${account.user.email}. Companies you publish show in the directory for everyone.`));
+        const drafts = own.filter((profile) => profile.local);
+        if (drafts.length) panel.append(importPanel(drafts, "dashboard"));
+        panel.append(dashboardButton("Account", "button button-outline", "account-open", (button) => openAccount(button)));
+      } else {
+        panel.append(element("p", "dialog-copy", account.error || "Sign in to publish your companies so everyone can find them, and to manage them from any device."));
+        if (!account.error) panel.append(dashboardButton("Sign in", "button button-primary", "account-sign-in", (button) => openAccount(button)));
+      }
+      container.append(panel);
+    }
+
     const companies = dashboardSection(container, "companies", "Your companies");
     if (own.length) {
       const list = element("ul", "dashboard-list");
       for (const profile of own) {
-        const { row, actions } = dashboardCompanyRow(profile, `${profile.category} · ${profile.location}`);
+        const status = ACCOUNTS_ENABLED ? (profile.member ? "Published" : "Draft in this browser") : profile.location;
+        const { row, actions } = dashboardCompanyRow(profile, `${profile.category} · ${status}`);
         actions.append(
           dashboardLink("Open profile", `company.html?id=${encodeURIComponent(profile.id)}`, "button button-secondary"),
           dashboardButton("Edit profile", "button button-secondary", `edit-${profile.id}`, (button) => openEditProfile(profile, button), `Edit ${profile.name} profile`),
@@ -4834,7 +4892,7 @@
       }
       companies.append(list);
     } else {
-      dashboardEmpty(companies, "You haven't made a company profile in this browser yet.",
+      dashboardEmpty(companies, account.user ? "You haven't published a company yet." : "You haven't made a company profile in this browser yet.",
         dashboardButton("Create your company profile", "button button-primary", "create-profile", (button) => openJoin(button)));
     }
     companies.append(element("p", "form-hint", "Profile views from other members will appear here once BOND launches accounts. This preview can't count visits from other people's browsers."));
@@ -5053,6 +5111,7 @@
   }
 
   function openJoin(opener) {
+    paintJoinMode(null);
     showDialog(document.getElementById("join-dialog"), opener);
   }
 
@@ -5070,14 +5129,70 @@
       dialog.dataset.createSubmit = submitLabel?.textContent || "";
     }
     if (heading) heading.textContent = profile ? `Edit ${profile.name}.` : dialog.dataset.createHeading;
-    if (copy) copy.textContent = profile ? "Change anything and save. Leave the image, video, and photo fields empty to keep what you already uploaded. Changes stay in this browser." : dialog.dataset.createCopy;
-    if (submitLabel) submitLabel.textContent = profile ? "Save changes " : dialog.dataset.createSubmit;
+    if (copy) {
+      copy.textContent = profile?.member ? "Change anything and save. Everyone sees your changes right away. Leave the image, video, and photo fields empty to keep what you already uploaded; videos and project photos stay in this browser."
+        : profile ? "Change anything and save. Leave the image, video, and photo fields empty to keep what you already uploaded. Changes stay in this browser."
+        : account.user ? "Start with your website and BOND fills in what it can. Your profile is published to your BOND account and shows in the directory for everyone. Videos and project photos stay in this browser for now."
+        : ACCOUNTS_ENABLED ? "Start with your website and BOND fills in what it can. You're not signed in, so this profile is saved as a draft in this browser. Sign in first to publish it to your BOND account."
+        : dialog.dataset.createCopy;
+    }
+    if (submitLabel) submitLabel.textContent = profile ? "Save changes " : account.user ? "Publish profile " : dialog.dataset.createSubmit;
+    dialog.querySelector("#profile-delete")?.remove();
+    const submit = dialog.querySelector("#join-form button[type=submit]");
+    if (profile && submit) submit.after(profileDeleteButton(profile));
+  }
+
+  function profileDeleteButton(profile) {
+    const button = element("button", "danger-link profile-delete", "Delete this profile");
+    button.type = "button";
+    button.id = "profile-delete";
+    let armed = false;
+    let timer;
+    button.addEventListener("click", async () => {
+      if (!armed) {
+        armed = true;
+        button.textContent = `Select again to permanently delete ${profile.name}`;
+        timer = window.setTimeout(() => {
+          armed = false;
+          button.textContent = "Delete this profile";
+        }, 6000);
+        return;
+      }
+      window.clearTimeout(timer);
+      button.disabled = true;
+      button.textContent = "Deleting…";
+      try {
+        await deleteOwnProfile(profile);
+      } catch (error) {
+        button.disabled = false;
+        armed = false;
+        button.textContent = "Delete this profile";
+        setFormMessage(error.message || "This profile couldn't be deleted.", true);
+        return;
+      }
+      renderDirectory();
+      renderExpoFloor();
+      renderFullCompanyProfile();
+      renderDashboard();
+      const joinDialog = document.getElementById("join-dialog");
+      joinDialog?.addEventListener("close", () => window.setTimeout(() => {
+        const active = document.activeElement;
+        if (active && active !== document.body && active.isConnected && !joinDialog.contains(active)) return;
+        const focusTarget = document.querySelector("#member-dashboard h1, #full-company-profile h1, #company-grid");
+        if (!focusTarget) return;
+        if (!focusTarget.hasAttribute("tabindex")) focusTarget.setAttribute("tabindex", "-1");
+        focusTarget.focus();
+      }, 0), { once: true });
+      joinDialog?.close();
+      announce(`${profile.name} was deleted.`);
+    });
+    return button;
   }
 
   function openEditProfile(profile, opener) {
     const dialog = document.getElementById("join-dialog");
     const form = document.getElementById("join-form");
-    if (!dialog || !form || !profile?.local) return;
+    if (!dialog || !form || !isOwn(profile)) return;
     form.reset();
     editingProfileId = profile.id;
     const values = {
@@ -5108,6 +5223,427 @@
     paintJoinMode(profile);
     showDialog(dialog, opener);
     form.elements.namedItem("company")?.focus();
+  }
+
+  const account = { client: null, user: null, loaded: false, error: "" };
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = src;
+      script.async = true;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error("The sign-in service could not load."));
+      document.head.append(script);
+    });
+  }
+
+  function memberMediaUrl(path, version) {
+    if (typeof path !== "string" || !/^[0-9a-f-]{36}\/[0-9a-f-]{36}\/(logo|cover)\.(png|jpg|webp)$/.test(path)) return "";
+    const stamp = Date.parse(version);
+    return `${SUPABASE_URL}/storage/v1/object/public/${MEDIA_BUCKET}/${path}${Number.isFinite(stamp) ? `?v=${stamp}` : ""}`;
+  }
+
+  function memberProfileFromRow(row) {
+    if (!row || typeof row !== "object" || typeof row.id !== "string") return null;
+    const id = `m-${row.id}`;
+    const name = cleanText(row.name, 80);
+    const description = cleanText(row.description, 500);
+    const category = cleanText(row.industry, 40);
+    if (!MEMBER_ID_PATTERN.test(id) || !name || !description || !categories.includes(category)) return null;
+    const ownerId = typeof row.owner_id === "string" ? row.owner_id : "";
+    const publishContact = row.publish_contact === true;
+    const logo = memberMediaUrl(row.logo_path, row.updated_at);
+    const cover = memberMediaUrl(row.cover_path, row.updated_at);
+    return {
+      id, remoteId: row.id, ownerId, member: true, mine: Boolean(account.user && ownerId === account.user.id),
+      name, category, description,
+      location: cleanText(row.location, 100) || "Location not added",
+      tagline: cleanText(row.tagline, 100), story: cleanText(row.story, 1200),
+      services: parseServices(row.services), certifications: parseCertifications(row.certifications), projects: parseProjects(row.projects),
+      serviceArea: cleanText(row.service_area, 150),
+      size: companySizes.includes(row.company_size) ? row.company_size : "",
+      ownership: ownershipOptions.includes(row.ownership) ? row.ownership : "Not specified",
+      representative: cleanText(row.representative, 80), representativeRole: "Company representative",
+      website: normalizeWebsite(row.website),
+      publishContact, publicEmail: publishContact ? normalizeEmail(row.public_email) : "", publicPhone: publishContact ? normalizePhone(row.public_phone) : "",
+      logo, cover, logoPath: logo ? row.logo_path : "", coverPath: cover ? row.cover_path : "",
+    };
+  }
+
+  function placeMemberProfile(profile) {
+    const index = profiles.findIndex((entry) => entry.id === profile.id);
+    if (index >= 0) {
+      profiles[index] = profile;
+      return;
+    }
+    const firstDraft = profiles.findIndex((entry) => entry.local);
+    profiles.splice(firstDraft < 0 ? profiles.length : firstDraft, 0, profile);
+  }
+
+  async function loadMemberProfiles() {
+    const { data, error } = await account.client.from(PROFILES_TABLE).select("*").order("created_at", { ascending: true }).limit(500);
+    if (error) {
+      account.error = "Member companies couldn't load right now. Refresh the page to try again.";
+      return;
+    }
+    for (let index = profiles.length - 1; index >= 0; index -= 1) if (profiles[index].member) profiles.splice(index, 1);
+    for (const row of Array.isArray(data) ? data : []) {
+      const profile = memberProfileFromRow(row);
+      if (profile) placeMemberProfile(profile);
+    }
+    account.error = "";
+    account.loaded = true;
+  }
+
+  function markOwnMemberProfiles() {
+    for (const profile of profiles) if (profile.member) profile.mine = Boolean(account.user && profile.ownerId === account.user.id);
+  }
+
+  function refreshAccountViews() {
+    renderAccountButton();
+    renderDirectory();
+    renderExpoFloor();
+    renderFullCompanyProfile();
+    renderDashboard();
+  }
+
+  function cleanAuthParams() {
+    const url = new URL(window.location.href);
+    const hash = new URLSearchParams(url.hash.slice(1));
+    const keys = ["code", "error", "error_code", "error_description"];
+    const linkError = url.searchParams.get("error_description") || hash.get("error_description") || "";
+    const hadCode = url.searchParams.has("code");
+    keys.forEach((key) => url.searchParams.delete(key));
+    if (keys.some((key) => hash.has(key)) || hash.has("access_token")) url.hash = "";
+    window.history.replaceState(window.history.state, "", url.href);
+    return { hadCode, linkError };
+  }
+
+  function signInRedirect() {
+    const url = new URL(window.location.href);
+    url.hash = "";
+    ["code", "error", "error_code", "error_description"].forEach((key) => url.searchParams.delete(key));
+    return url.href;
+  }
+
+  async function initAccounts() {
+    if (!ACCOUNTS_ENABLED) return;
+    const arriving = new URLSearchParams(window.location.search).has("code") || /error_description=/.test(window.location.hash + window.location.search);
+    try {
+      await loadScript(SUPABASE_SCRIPT);
+      if (!window.supabase?.createClient) throw new Error("missing client");
+      account.client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+        auth: { flowType: "pkce", detectSessionInUrl: true, persistSession: true, autoRefreshToken: true, storageKey: AUTH_STORAGE_KEY },
+      });
+      const { data } = await account.client.auth.getSession();
+      account.user = data?.session?.user || null;
+      account.client.auth.onAuthStateChange((event, session) => {
+        const next = session?.user || null;
+        const changed = (next?.id || "") !== (account.user?.id || "");
+        account.user = next;
+        if (!changed) return;
+        window.setTimeout(() => {
+          markOwnMemberProfiles();
+          refreshAccountViews();
+        }, 0);
+      });
+      await loadMemberProfiles();
+    } catch {
+      account.error = "Sign-in isn't available right now. Refresh the page to try again.";
+    }
+    if (arriving) {
+      const { linkError } = cleanAuthParams();
+      if (account.user) announce(`You're signed in as ${account.user.email}.`);
+      else if (linkError || !account.error) announce("That sign-in link expired or was already used. Request a new one from Sign in.");
+    }
+  }
+
+  function renderAccountButton() {
+    if (!ACCOUNTS_ENABLED) return;
+    const nav = document.getElementById("nav-links");
+    if (!nav) return;
+    let button = nav.querySelector(".header-account");
+    if (!button) {
+      button = element("button", "button button-outline button-small header-account");
+      button.type = "button";
+      button.addEventListener("click", () => {
+        document.querySelector(".menu-toggle[aria-expanded=\"true\"]")?.click();
+        openAccount(button);
+      });
+      nav.insertBefore(button, nav.querySelector("[data-open-join]"));
+    }
+    button.textContent = account.user ? "Account" : "Sign in";
+    button.setAttribute("aria-label", account.user ? `Account, signed in as ${account.user.email}` : "Sign in");
+  }
+
+  function signInErrorMessage(error) {
+    const text = String(error?.message || "");
+    if (error?.status === 429 || /rate limit|too many/i.test(text)) return "Too many sign-in emails were requested. Wait a few minutes and try again.";
+    if (/not authorized|not allowed/i.test(text)) return "While BOND is in preview, sign-in emails only reach the BOND team. Public sign-in opens soon.";
+    if (/invalid.*email|email.*invalid/i.test(text)) return "Enter a valid email address.";
+    return "The sign-in email couldn't be sent. Check your connection and try again.";
+  }
+
+  function openAccount(opener) {
+    const view = prepareDialog("Your BOND account", account.user ? "You're signed in." : "Sign in to BOND");
+    if (!view) return;
+    const { dialog, body } = view;
+    if (!account.client) {
+      body.append(element("p", "dialog-copy", account.error || "Sign-in is still loading. Try again in a moment."));
+      showDialog(dialog, opener);
+      return;
+    }
+    if (account.user) {
+      body.append(element("p", "dialog-copy", `Signed in as ${account.user.email}. Company profiles you create or edit now are published to your account and show in the directory for everyone.`));
+      const drafts = profiles.filter((profile) => profile.local);
+      if (drafts.length) body.append(importPanel(drafts, "account"));
+      const actions = element("div", "account-actions");
+      const dashboard = element("a", "button button-secondary", "Open your dashboard");
+      dashboard.href = "dashboard.html";
+      const signOut = element("button", "button button-outline", "Sign out");
+      signOut.type = "button";
+      signOut.addEventListener("click", async () => {
+        signOut.disabled = true;
+        const { error } = await account.client.auth.signOut();
+        if (error) {
+          signOut.disabled = false;
+          announce("You couldn't be signed out. Check your connection and try again.");
+          return;
+        }
+        dialog.close();
+        announce("You're signed out.");
+      });
+      actions.append(dashboard, signOut);
+      body.append(actions);
+      showDialog(dialog, opener);
+      return;
+    }
+    body.append(element("p", "dialog-copy", "We'll email you a sign-in link. There's no password. New to BOND? The same link creates your account."));
+    const form = element("form", "account-form");
+    form.noValidate = true;
+    const label = element("label", "", "Work email");
+    label.htmlFor = "account-email";
+    const input = element("input");
+    Object.assign(input, { id: "account-email", type: "email", name: "email", autocomplete: "email", maxLength: 160, required: true });
+    input.setAttribute("aria-describedby", "account-status");
+    const submit = element("button", "button button-primary", "Email me a sign-in link");
+    submit.type = "submit";
+    const status = element("p", "form-help", "");
+    status.id = "account-status";
+    status.setAttribute("role", "status");
+    form.append(label, input, submit, status);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const email = normalizeEmail(cleanText(input.value, 160));
+      if (!email) {
+        input.setAttribute("aria-invalid", "true");
+        status.textContent = "Enter a valid email address.";
+        input.focus();
+        return;
+      }
+      input.removeAttribute("aria-invalid");
+      submit.disabled = true;
+      status.textContent = "Sending your sign-in link…";
+      const { error } = await account.client.auth.signInWithOtp({ email, options: { emailRedirectTo: signInRedirect(), shouldCreateUser: true } });
+      submit.disabled = false;
+      if (error) {
+        status.textContent = signInErrorMessage(error);
+        return;
+      }
+      const sent = element("div", "account-sent");
+      sent.append(element("p", "dialog-copy", `Check your email. We sent a sign-in link to ${email}. Open it in this browser within 30 minutes.`));
+      const again = element("button", "button button-outline", "Use a different email");
+      again.type = "button";
+      again.addEventListener("click", () => {
+        sent.replaceWith(form);
+        input.focus();
+      });
+      sent.append(again);
+      form.replaceWith(sent);
+      sent.setAttribute("tabindex", "-1");
+      sent.focus();
+      announce(`Sign-in link sent to ${email}.`);
+    });
+    body.append(form);
+    showDialog(dialog, opener);
+    input.focus();
+  }
+
+  function dataUrlToBlob(dataUrl) {
+    const match = /^data:(image\/(png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl || "");
+    if (!match) throw new Error("This image couldn't be prepared. Choose a PNG, JPG, or WebP file.");
+    const binary = window.atob(match[3]);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return { blob: new Blob([bytes], { type: match[1] }), type: match[1], extension: { png: "png", jpeg: "jpg", webp: "webp" }[match[2]] };
+  }
+
+  async function uploadMemberImage(remoteId, kind, dataUrl, previousPath) {
+    const { blob, type, extension } = dataUrlToBlob(dataUrl);
+    const path = `${account.user.id}/${remoteId}/${kind}.${extension}`;
+    const bucket = account.client.storage.from(MEDIA_BUCKET);
+    const { error } = await bucket.upload(path, blob, { upsert: true, contentType: type, cacheControl: "3600" });
+    if (error) throw error;
+    if (previousPath && previousPath !== path) await bucket.remove([previousPath]).catch(() => {});
+    return path;
+  }
+
+  function memberRow(details) {
+    return {
+      name: details.name, industry: details.category, description: details.description,
+      location: details.location === "Location not added" ? "" : details.location,
+      tagline: details.tagline || "", story: details.story || "",
+      services: details.services, certifications: details.certifications || [], projects: (details.projects || []).map((project) => project.title),
+      service_area: details.serviceArea || "", company_size: details.size || "", ownership: details.ownership,
+      representative: details.representative || "", website: details.website || "",
+      publish_contact: details.publishContact === true,
+      public_email: details.publishContact ? details.publicEmail || "" : "",
+      public_phone: details.publishContact ? details.publicPhone || "" : "",
+    };
+  }
+
+  function memberSaveError(error) {
+    const text = String(error?.message || "");
+    if (/up to 5 company profiles/i.test(text)) return `Your account can have up to ${MAX_MEMBER_PROFILES} company profiles. Delete one to add another.`;
+    if (error?.status === 401 || error?.code === "42501" || /jwt|row-level security/i.test(text)) return "Your sign-in expired. Sign in again, then save.";
+    return "Your profile couldn't be saved. Check your connection and try again.";
+  }
+
+  async function saveMemberProfile(details, images, existing) {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then save.");
+    const table = account.client.from(PROFILES_TABLE);
+    const request = existing ? table.update(memberRow(details)).eq("id", existing.remoteId) : table.insert(memberRow(details));
+    const { data, error } = await request.select().single();
+    if (error) throw new Error(memberSaveError(error));
+    let row = data;
+    let imagesSaved = true;
+    const paths = {};
+    for (const kind of ["logo", "cover"]) {
+      if (!images[kind]) continue;
+      try {
+        paths[`${kind}_path`] = await uploadMemberImage(row.id, kind, images[kind], existing?.[`${kind}Path`]);
+      } catch {
+        imagesSaved = false;
+      }
+    }
+    if (Object.keys(paths).length) {
+      const updated = await account.client.from(PROFILES_TABLE).update(paths).eq("id", row.id).select().single();
+      if (updated.error) imagesSaved = false;
+      else row = updated.data;
+    }
+    const profile = memberProfileFromRow(row);
+    if (!profile) throw new Error("Your profile was saved but couldn't be shown. Refresh the page.");
+    placeMemberProfile(profile);
+    return { profile, imagesSaved };
+  }
+
+  async function deleteOwnProfile(profile) {
+    if (profile.member) {
+      if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then delete.");
+      const { data, error } = await account.client.from(PROFILES_TABLE).delete().eq("id", profile.remoteId).select("id");
+      if (error || !Array.isArray(data) || data.length !== 1) throw new Error("This profile couldn't be deleted. Check your connection and try again.");
+      const paths = [profile.logoPath, profile.coverPath].filter(Boolean);
+      if (paths.length) await account.client.storage.from(MEDIA_BUCKET).remove(paths).catch(() => {});
+    }
+    const index = profiles.indexOf(profile);
+    if (index >= 0) profiles.splice(index, 1);
+    if (profile.local && !saveLocalProfiles()) {
+      profiles.splice(index, 0, profile);
+      throw new Error("This draft couldn't be removed from browser storage. Try again.");
+    }
+    await mediaRequest("readwrite", (store) => store.delete(profile.id)).catch(() => {});
+  }
+
+  function remapStoredCompanyId(oldId, newId) {
+    const from = JSON.stringify(oldId);
+    const to = JSON.stringify(newId);
+    try {
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (!key || !key.startsWith("bond.demo.") || key === STORAGE_KEY) continue;
+        const value = localStorage.getItem(key);
+        if (value && value.includes(from)) localStorage.setItem(key, value.split(from).join(to));
+      }
+    } catch {
+      // Remapping is best effort; references that miss it point at a draft that no longer exists.
+    }
+  }
+
+  function detailsFromProfile(profile) {
+    return {
+      name: profile.name, category: profile.category, description: profile.description, location: profile.location,
+      tagline: profile.tagline || "", story: profile.story || "", services: profile.services || [],
+      certifications: profile.certifications || [], projects: profile.projects || [],
+      serviceArea: profile.serviceArea || "", size: profile.size || "", ownership: profile.ownership,
+      representative: profile.representative || "", website: profile.website || "",
+      publishContact: profile.publishContact === true, publicEmail: profile.publicEmail || "", publicPhone: profile.publicPhone || "",
+    };
+  }
+
+  async function importLocalDrafts(status) {
+    const drafts = profiles.filter((profile) => profile.local);
+    const room = MAX_MEMBER_PROFILES - profiles.filter((profile) => profile.member && profile.mine).length;
+    if (!drafts.length) return;
+    if (room <= 0) {
+      status.textContent = `Your account already has ${MAX_MEMBER_PROFILES} company profiles. Delete one to move a draft.`;
+      return;
+    }
+    let moved = 0;
+    let failure = "";
+    for (const draft of drafts.slice(0, room)) {
+      status.textContent = `Moving ${draft.name}…`;
+      try {
+        const { profile } = await saveMemberProfile(detailsFromProfile(draft), { logo: draft.logo || "", cover: draft.cover || "" }, null);
+        const media = await readProfileMedia(draft);
+        if (media.video || media.photos.length) await saveProfileMedia(profile.id, media).catch(() => {});
+        remapStoredCompanyId(draft.id, profile.id);
+        await deleteOwnProfile(draft);
+        moved += 1;
+      } catch (error) {
+        failure = error.message || "A draft couldn't be moved.";
+        break;
+      }
+    }
+    const skipped = drafts.length - moved - (failure ? 1 : 0);
+    const parts = [];
+    if (moved) parts.push(`${moved} ${moved === 1 ? "draft is" : "drafts are"} now published to your account.`);
+    if (failure) parts.push(failure);
+    if (skipped > 0 && !failure) parts.push(`${skipped} ${skipped === 1 ? "draft stays" : "drafts stay"} in this browser because your account is full.`);
+    if (!moved) {
+      status.textContent = parts.join(" ");
+      return;
+    }
+    try { sessionStorage.setItem(FLASH_KEY, parts.join(" ")); } catch { /* the reload still shows the result */ }
+    window.location.reload();
+  }
+
+  function importPanel(drafts, key) {
+    const panel = element("div", "account-import");
+    panel.append(element("p", "dialog-copy", `You have ${drafts.length} company ${drafts.length === 1 ? "draft" : "drafts"} saved only in this browser. Move ${drafts.length === 1 ? "it" : "them"} to your account to publish ${drafts.length === 1 ? "it" : "them"} in the directory. Videos and project photos stay in this browser.`));
+    const status = element("p", "form-help", "");
+    status.setAttribute("role", "status");
+    const button = element("button", "button button-primary", drafts.length === 1 ? "Move draft to your account" : "Move drafts to your account");
+    button.type = "button";
+    button.dataset.dashKey = `import-${key}`;
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      await importLocalDrafts(status);
+      button.disabled = false;
+    });
+    panel.append(button, status);
+    return panel;
+  }
+
+  function showFlash() {
+    try {
+      const message = sessionStorage.getItem(FLASH_KEY);
+      if (!message) return;
+      sessionStorage.removeItem(FLASH_KEY);
+      announce(message.slice(0, 300));
+    } catch {
+      // Session storage can be unavailable; the flash is only a courtesy.
+    }
   }
 
   function resolveProfile(value) {
@@ -5149,7 +5685,7 @@
       const pending = Object.values(states).some((state) => state.pending);
       const errors = Object.values(states).map((state) => state.error).filter(Boolean);
       const loaded = Object.values(states).filter((state) => state.dataUrl).length;
-      const message = errors[0] || (pending ? "Loading company images…" : loaded ? "Image previews ready. Uploads stay in this browser." : "");
+      const message = errors[0] || (pending ? "Loading company images…" : loaded ? account.user ? "Image previews ready." : "Image previews ready. Uploads stay in this browser." : "");
       if (status) {
         status.textContent = message;
         status.hidden = !message;
@@ -5675,9 +6211,24 @@
         publicEmail, publicPhone, publishContact: data.has("publishContact"),
       };
       if (editingProfileId) {
-        const existing = profiles.find((profile) => profile.local && profile.id === editingProfileId);
+        const existing = profiles.find((profile) => isOwn(profile) && profile.id === editingProfileId);
         if (!existing) {
-          setFormMessage("This profile is no longer saved in this browser, so it can't be edited.", true);
+          setFormMessage("This profile is no longer available to edit. Refresh the page and try again.", true);
+          return;
+        }
+        if (existing.member) {
+          const { profile: updated, imagesSaved } = await saveMemberProfile(details, images, existing);
+          let mediaSaved = true;
+          if (media.video || media.photos.length) {
+            const current = await readProfileMedia(updated);
+            mediaSaved = await saveProfileMedia(updated.id, { video: media.video || current.video, photos: media.photos.length ? media.photos : current.photos }).then(() => true, () => false);
+          }
+          renderDirectory();
+          renderExpoFloor();
+          renderFullCompanyProfile();
+          document.getElementById("join-dialog")?.close();
+          announce(!imagesSaved ? `Changes to ${name} are published, but a new image couldn't be uploaded. Try it again.`
+            : mediaSaved ? `Changes to ${name} are published.` : `Changes to ${name} are published, but the new video or photos couldn't be stored in this browser.`);
           return;
         }
         const previous = { ...existing };
@@ -5700,6 +6251,26 @@
         announce(mediaSaved ? `Changes to ${name} are saved in this browser.` : `Changes to ${name} are saved, but the new video or photos could not be stored in this browser.`);
         return;
       }
+      if (account.user) {
+        const { profile: published, imagesSaved } = await saveMemberProfile(details, images, null);
+        const hasMedia = Boolean(media.video || media.photos.length);
+        const mediaSaved = hasMedia ? await saveProfileMedia(published.id, media).then(() => true, () => false) : true;
+        resetDirectoryFilters();
+        renderDirectory();
+        renderExpoFloor();
+        form.reset();
+        setFormMessage(`${name} is published to your BOND account and shows in the directory for everyone.`);
+        const success = document.getElementById("join-success");
+        if (success && !imagesSaved) success.append(element("p", "ownership-note", "Your logo or cover image couldn't be uploaded. Use Edit profile to try again."));
+        if (success && !mediaSaved) success.append(element("p", "ownership-note", "Your video and project photos couldn't be stored in this browser, so they won't appear on the profile."));
+        if (success) {
+          success.append(fullProfileLink(published));
+          success.append(element("h3", "detail-label", "Your first matches"));
+          renderMatchList(published, success, { limit: 3, compact: true });
+        }
+        announce("Your company profile is published.");
+        return;
+      }
       const createdProfile = { id: newProfileId(), ...details, representativeRole: "Company representative", local: true, ...images };
       profiles.push(createdProfile);
       const saved = saveLocalProfiles();
@@ -5711,7 +6282,7 @@
       form.reset();
       const hasDirectory = Boolean(document.getElementById("company-grid"));
       setFormMessage(saved
-        ? `${name} is now a sample profile in this browser. ${hasDirectory ? "Close this preview to find it in the directory." : "Open the company directory below to find it."} This does not register a BOND account.`
+        ? `${name} is now a sample profile in this browser. ${hasDirectory ? "Close this preview to find it in the directory." : "Open the company directory below to find it."} ${ACCOUNTS_ENABLED ? "Sign in to publish it to your BOND account." : "This does not register a BOND account."}`
         : `${name} is now a sample profile for this visit. Browser storage is unavailable, so it will not persist after this visit. This does not register a BOND account.`);
       if (!hasDirectory) {
         const status = document.getElementById("join-success");
@@ -5749,20 +6320,41 @@
       }
     });
 
-    renderDirectory();
-    renderFeatured();
-    renderMatchmaker();
-    renderRoomBuilder();
-    renderOpportunityRoom();
-    renderExpoFloor();
-    renderOpportunities();
-    renderEvents();
-    renderFeed();
-    renderFullCompanyProfile();
-    if (document.getElementById("member-dashboard")) {
-      renderDashboard();
-      ["company-dialog", "join-dialog"].forEach((id) => document.getElementById(id)?.addEventListener("close", renderDashboard));
+    const renderAll = () => {
+      renderDirectory();
+      renderFeatured();
+      renderMatchmaker();
+      renderRoomBuilder();
+      renderOpportunityRoom();
+      renderExpoFloor();
+      renderOpportunities();
+      renderEvents();
+      renderFeed();
+      renderFullCompanyProfile();
+      if (document.getElementById("member-dashboard")) {
+        renderDashboard();
+        ["company-dialog", "join-dialog"].forEach((id) => document.getElementById(id)?.addEventListener("close", renderDashboard));
+      }
+      showFlash();
+    };
+    if (!ACCOUNTS_ENABLED) {
+      renderAll();
+      return;
     }
+    renderAccountButton();
+    let rendered = false;
+    const renderOnce = () => {
+      if (rendered) return false;
+      rendered = true;
+      renderAll();
+      return true;
+    };
+    const slowNetwork = window.setTimeout(renderOnce, 2500);
+    initAccounts().finally(() => {
+      window.clearTimeout(slowNetwork);
+      if (!renderOnce()) refreshAccountViews();
+      else renderAccountButton();
+    });
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", setup, { once: true });
