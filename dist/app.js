@@ -25,7 +25,7 @@
   const FLASH_KEY = "bond.flash";
   const MAX_MEMBER_PROFILES = 5;
   const MEMBER_ID_PATTERN = /^m-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-  // Supabase's built-in sender only emails the project's team, so public sign-in waits for BOND's own email sender.
+  // Public sign-in on joinbond.world is a launch decision; previews and local development always have accounts.
   const PUBLIC_ACCOUNTS = false;
   const ACCOUNTS_ENABLED = PUBLIC_ACCOUNTS || !["joinbond.world", "www.joinbond.world"].includes(window.location.hostname);
   const MAX_ROOMS = 12;

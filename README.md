@@ -67,10 +67,11 @@ Then open `http://127.0.0.1:3017/expos.html?host` in one tab and `http://127.0.0
 Company sign-in and published profiles run on [Supabase](https://supabase.com) (organization "BOND", project `bond`, free plan, region us-west-1).
 
 - Sign-in uses one-time email links (no passwords). The same link creates an account the first time.
+- Sign-in emails are sent by [Resend](https://resend.com) from `no-reply@joinbond.world` through Supabase's custom SMTP setting (`smtp.resend.com`, port 465). The domain's DKIM, SPF (`send` and `rsend`), and DMARC records live in Namecheap Advanced DNS. The Resend key is a sending-only key limited to joinbond.world, stored in macOS Keychain under project `bond` as `RESEND_API_KEY`.
 - Signed-in members publish company profiles to the `company_profiles` table; everyone can read them, and only the owner can change or delete their own (row-level security, at most 5 profiles per account). Logos and covers go to the public `company-media` storage bucket under the owner's folder (PNG, JPEG, or WebP, up to 1 MB).
 - Intro videos and project photos still stay in the browser (IndexedDB).
 - Browser drafts made before signing in can be moved into the account from the dashboard or the Account dialog.
-- `dist/app.js` loads `dist/vendor/supabase-2.117.3.js` (MIT, npm integrity verified, served from this site) only where accounts are switched on. Accounts are on for local development and Vercel previews, and off on joinbond.world until BOND has its own email sender (`PUBLIC_ACCOUNTS` in `dist/app.js`).
+- `dist/app.js` loads `dist/vendor/supabase-2.117.3.js` (MIT, npm integrity verified, served from this site) only where accounts are switched on. Accounts are on for local development and Vercel previews, and off on joinbond.world until public sign-in is launched (`PUBLIC_ACCOUNTS` in `dist/app.js`).
 - The publishable key in `dist/app.js` is public by design. The secret key and database password live only in macOS Keychain under project `bond`.
 - `supabase/migrations/` holds the schema, policies, and storage rules; apply with `supabase db push` after `supabase link --project-ref mdifopcbcvyzfoflnoxz`. `supabase/tests/company_profiles_rls.sql` checks the access rules inside a transaction that is rolled back: `supabase db query --linked -f supabase/tests/company_profiles_rls.sql`.
 
