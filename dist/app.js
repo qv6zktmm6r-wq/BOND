@@ -4124,6 +4124,135 @@
     };
   }
 
+  function withScheme(value) {
+    return value && !/^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? `https://${value}` : value;
+  }
+
+  function fitText(text, max) {
+    if (text.length <= max) return text;
+    const cut = text.slice(0, max);
+    const sentence = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
+    return sentence > max * 0.5 ? cut.slice(0, sentence + 1) : `${text.slice(0, max - 1).replace(/\s+\S*$/, "")}…`;
+  }
+
+  function configureWebsiteAutofill(form) {
+    const input = form.elements.namedItem("website");
+    const button = document.getElementById("website-autofill");
+    const status = document.getElementById("website-autofill-status");
+    if (!input || !button || !status) return;
+    const help = status.textContent;
+    const buttonText = button.textContent;
+    let busy = false;
+    const setField = (name, value) => {
+      const field = form.elements.namedItem(name);
+      if (!field || !value || (field.value.trim() && !field.classList.contains("is-autofilled"))) return false;
+      field.value = value;
+      if (field.value !== value) return false;
+      field.classList.add("is-autofilled");
+      return true;
+    };
+    const setImage = (name, dataUrl) => {
+      const field = form.elements.namedItem(name);
+      const match = typeof dataUrl === "string" && /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+      if (!field || !match || (field.files?.length && !field.classList.contains("is-autofilled")) || typeof DataTransfer !== "function") return false;
+      try {
+        const bytes = Uint8Array.from(atob(match[2]), (character) => character.charCodeAt(0));
+        const transfer = new DataTransfer();
+        transfer.items.add(new File([bytes], `${name}-from-website.${match[1].split("/")[1]}`, { type: match[1] }));
+        field.files = transfer.files;
+        field.classList.add("is-autofilled");
+        field.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const run = async () => {
+      if (busy) return;
+      const value = cleanText(input.value, 500);
+      if (!value) {
+        status.textContent = "Enter your website first, for example yourcompany.com.";
+        input.focus();
+        return;
+      }
+      busy = true;
+      button.disabled = true;
+      button.textContent = "Reading…";
+      status.textContent = `Reading ${value}…`;
+      try {
+        const response = await fetch("/api/website-profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: value }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "We couldn't read that website. Fill in the profile yourself.");
+        const fields = data.fields && typeof data.fields === "object" ? data.fields : {};
+        const text = (key, max) => {
+          const raw = typeof fields[key] === "string" ? cleanText(fields[key], 1200) : "";
+          return raw ? fitText(raw, max) : "";
+        };
+        const description = typeof fields.description === "string" ? cleanText(fields.description, 1200) : "";
+        const services = Array.isArray(fields.services) ? fields.services.filter((item) => typeof item === "string").map((item) => cleanText(item, 40)).filter(Boolean).slice(0, 6) : [];
+        if (normalizeWebsite(data.website)) input.value = data.website;
+        const filled = [];
+        for (const [name, fieldValue, label] of [
+          ["company", text("name", 80), "name"],
+          ["industry", categories.includes(fields.industry) ? fields.industry : "", "industry"],
+          ["description", description && fitText(description, 240), "description"],
+          ["tagline", text("tagline", 100), "one-line introduction"],
+          ["story", description.length > 240 ? fitText(description, 1200) : "", "story"],
+          ["services", fitText(services.join(", "), 250), "services"],
+          ["location", text("location", 80), "headquarters"],
+          ["publicEmail", normalizeEmail(fields.email), "email"],
+          ["publicPhone", normalizePhone(fields.phone) ? cleanText(fields.phone, 40) : "", "phone"],
+        ]) {
+          if (setField(name, fieldValue)) filled.push(label);
+        }
+        const images = data.images && typeof data.images === "object" ? data.images : {};
+        if (setImage("logo", images.logo)) filled.push("logo");
+        if (setImage("cover", images.cover)) filled.push("cover image");
+        form.dispatchEvent(new Event("change"));
+        const details = form.querySelector(".profile-form-details");
+        if (details && filled.some((label) => !["name", "industry", "description"].includes(label))) details.open = true;
+        const source = cleanText(data.source, 120) || "your website";
+        const missing = [["company", "name"], ["industry", "industry"], ["description", "description"]]
+          .filter(([name]) => !form.elements.namedItem(name)?.value.trim()).map(([, label]) => label);
+        let message = filled.length
+          ? `Filled from ${source}: ${filled.join(", ")}. Check each field and change anything that's off.`
+          : `We opened ${source} but couldn't find details to fill in.`;
+        if (missing.length) message += ` Still needed: ${missing.join(", ")}.`;
+        if (filled.includes("email") || filled.includes("phone")) message += " Contact details stay hidden unless you tick the box to show them.";
+        status.textContent = message;
+        const firstMissing = { name: "company", industry: "industry", description: "description" }[missing[0]];
+        form.elements.namedItem(firstMissing || "company")?.focus();
+      } catch (error) {
+        status.textContent = error instanceof TypeError ? "We couldn't reach BOND to read that website. Check your connection, or fill in the profile yourself." : error.message;
+      } finally {
+        busy = false;
+        button.disabled = false;
+        button.textContent = buttonText;
+      }
+    };
+    button.addEventListener("click", run);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        run();
+      }
+    });
+    form.addEventListener("input", (event) => {
+      if (event.isTrusted) event.target.classList?.remove("is-autofilled");
+    });
+    form.addEventListener("change", (event) => {
+      if (event.isTrusted && event.target !== form) event.target.classList?.remove("is-autofilled");
+    });
+    form.addEventListener("reset", () => {
+      form.querySelectorAll(".is-autofilled").forEach((field) => field.classList.remove("is-autofilled"));
+      status.textContent = help;
+    });
+  }
+
   function invalidProfileField(form, name, message) {
     const field = form.elements.namedItem(name);
     field?.setCustomValidity(message);
@@ -4288,6 +4417,7 @@
 
     const form = document.getElementById("join-form");
     const uploads = form ? configureProfileUploads(form) : null;
+    if (form) configureWebsiteAutofill(form);
     const showcase = form ? configureShowcaseUploads(form) : null;
     form?.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -4306,7 +4436,7 @@
         return;
       }
       const websiteInput = cleanText(data.get("website"), 2048);
-      const website = normalizeWebsite(websiteInput);
+      const website = normalizeWebsite(withScheme(websiteInput));
       const emailInput = cleanText(data.get("publicEmail"), 160);
       const publicEmail = normalizeEmail(emailInput);
       const phoneInput = cleanText(data.get("publicPhone"), 40);

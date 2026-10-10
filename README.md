@@ -39,6 +39,8 @@ Live Q&A audio runs on [LiveKit Cloud](https://cloud.livekit.io) (project "BOND"
 
 - `api/live-token.js` issues short-lived (2 hour) room passes. Guests can listen and raise a hand but cannot publish audio or data. Representatives get a speaking pass only with the host code.
 - `api/live-mic.js` passes or takes back the mic (host code required), or lets a speaker hand back their own mic (verified against their pass).
+- `api/website-profile.js` reads a company's public homepage and returns profile details (name, tagline, description, industry, services, location, contact details, logo, cover) for the "Fill from website" button. It only accepts requests from the BOND site and allows 12 lookups per visitor per minute on each server instance.
+- `api/_lib/website.js` fetches and parses the page. It only connects to public addresses (every DNS answer and redirect is checked; private, local, and IP-literal addresses are refused), and it caps time, redirects, and page and image sizes.
 - `api/_lib/live.js` signs LiveKit tokens with Node's `crypto` (no npm dependencies) and calls LiveKit's RoomService.
 - `dist/live-audio.js` connects the browser, plays whoever holds the mic, and sends live captions to the room. It loads `dist/vendor/livekit-client-2.22.3.umd.js` (Apache-2.0, npm integrity verified, served from this site) only when someone joins.
 - Representatives open any expo page with `?host` at the end of the address, go to Live Q&A, and enter the host code to see raised hands, pass or take back the mic, and answer live.

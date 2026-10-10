@@ -48,6 +48,8 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 - [x] Logo
 - [x] Services
 - [x] Website link
+- [x] Fill from website: a company enters its website first and BOND fills in the name, tagline, description, industry, services, location, contact details, logo, and cover from the public homepage. It never overwrites what the company typed, and the company checks everything before saving. Free (reads public page details, no AI provider).
+- [ ] Server-wide limit on website lookups (today each server instance allows 12 per visitor per minute; a Vercel Firewall rule would cover all instances)
 - [x] 30-second introduction video: companies upload a video of up to 30 seconds (checked for length and size); it plays on their profile. Sample companies show a video still.
 - [x] Certifications, labeled "Self-reported" or "Sample · Not verified"; a Verified badge waits for real verification
 - [x] Portfolio / project gallery: up to three project photos with titles; click a photo to enlarge it

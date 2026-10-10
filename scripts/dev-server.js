@@ -11,6 +11,7 @@ const root = path.resolve(__dirname, "..", "dist");
 const routes = {
   "/api/live-token": require("../api/live-token"),
   "/api/live-mic": require("../api/live-mic"),
+  "/api/website-profile": require("../api/website-profile"),
 };
 const types = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
