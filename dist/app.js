@@ -18,6 +18,9 @@
   const SUPABASE_URL = "https://mdifopcbcvyzfoflnoxz.supabase.co";
   const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_Ciioz3lRi0AzFp1namtbzg_MoTz3Hbj";
   const SUPABASE_SCRIPT = "vendor/supabase-2.117.3.js";
+  // Cloudflare Turnstile site key (public). Turnstile only accepts it on the hostnames listed for the widget in Cloudflare.
+  const TURNSTILE_SITE_KEY = "";
+  const TURNSTILE_SCRIPT = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
   const MEDIA_BUCKET = "company-media";
   const PROFILES_TABLE = "company_profiles";
   const PROFILE_COLUMNS = "id,owner_id,name,industry,description,location,tagline,story,services,certifications,projects,service_area,company_size,ownership,representative,website,publish_contact,public_email,public_phone,logo_path,cover_path,updated_at";
@@ -5239,6 +5242,62 @@
     });
   }
 
+  let turnstileReady = null;
+  function loadTurnstile() {
+    turnstileReady ||= loadScript(TURNSTILE_SCRIPT).then(() => {
+      if (!window.turnstile) throw new Error("missing");
+      return window.turnstile;
+    }).catch(() => {
+      turnstileReady = null;
+      throw new Error("The bot check couldn't load. If you use a content blocker, allow challenges.cloudflare.com and try again.");
+    });
+    return turnstileReady;
+  }
+
+  function botCheck(container, status) {
+    let widgetId = null;
+    let token = "";
+    let waiting = null;
+    let failure = "";
+    const settle = (value) => {
+      token = value;
+      if (waiting) waiting(value);
+      waiting = null;
+    };
+    loadTurnstile().then((turnstile) => {
+      widgetId = turnstile.render(container, {
+        sitekey: TURNSTILE_SITE_KEY,
+        action: "sign-in",
+        appearance: "interaction-only",
+        callback: (value) => { failure = ""; settle(value); },
+        "expired-callback": () => { token = ""; },
+        "error-callback": () => {
+          failure = "The bot check didn't pass. Reload the page and try again.";
+          settle("");
+          return true;
+        },
+      });
+    }).catch((error) => {
+      failure = error.message;
+      status.textContent = failure;
+      settle("");
+    });
+    return {
+      token() {
+        if (token || failure) return Promise.resolve(token);
+        return new Promise((resolve) => {
+          waiting = resolve;
+          setTimeout(() => settle(token), 20000);
+        });
+      },
+      failure: () => failure || "The bot check is taking too long. Reload the page and try again.",
+      reset() {
+        token = "";
+        if (widgetId !== null) window.turnstile?.reset(widgetId);
+      },
+    };
+  }
+
   function memberMediaUrl(path, version) {
     if (typeof path !== "string" || !/^[0-9a-f-]{36}\/[0-9a-f-]{36}\/(logo|cover)\.(png|jpg|webp)$/.test(path)) return "";
     const stamp = Date.parse(version);
@@ -5381,7 +5440,7 @@
   function signInErrorMessage(error) {
     const text = String(error?.message || "");
     if (error?.status === 429 || /rate limit|too many/i.test(text)) return "Too many sign-in emails were requested. Wait a few minutes and try again.";
-    if (/not authorized|not allowed/i.test(text)) return "While BOND is in preview, sign-in emails only reach the BOND team. Public sign-in opens soon.";
+    if (/captcha/i.test(text)) return "The bot check didn't pass. Reload the page and try again.";
     if (/invalid.*email|email.*invalid/i.test(text)) return "Enter a valid email address.";
     return "The sign-in email couldn't be sent. Check your connection and try again.";
   }
@@ -5433,7 +5492,9 @@
     const status = element("p", "form-help", "");
     status.id = "account-status";
     status.setAttribute("role", "status");
-    form.append(label, input, submit, status);
+    const captcha = TURNSTILE_SITE_KEY ? element("div", "account-captcha") : null;
+    form.append(label, input, ...(captcha ? [captcha] : []), submit, status);
+    const check = captcha ? botCheck(captcha, status) : null;
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const email = normalizeEmail(cleanText(input.value, 160));
@@ -5445,23 +5506,38 @@
       }
       input.removeAttribute("aria-invalid");
       submit.disabled = true;
+      const options = { emailRedirectTo: signInRedirect(), shouldCreateUser: true };
+      if (check) {
+        status.textContent = "Checking that you're not a bot…";
+        options.captchaToken = await check.token();
+        if (!options.captchaToken) {
+          submit.disabled = false;
+          status.textContent = check.failure();
+          return;
+        }
+      }
       status.textContent = "Sending your sign-in link…";
-      const { error } = await account.client.auth.signInWithOtp({ email, options: { emailRedirectTo: signInRedirect(), shouldCreateUser: true } });
+      const { error } = await account.client.auth.signInWithOtp({ email, options });
+      check?.reset();
       submit.disabled = false;
       if (error) {
         status.textContent = signInErrorMessage(error);
         return;
       }
+      status.textContent = "";
       const sent = element("div", "account-sent");
       sent.append(element("p", "dialog-copy", `Check your email. We sent a sign-in link to ${email}. Open it in this browser within 30 minutes.`));
       const again = element("button", "button button-outline", "Use a different email");
       again.type = "button";
       again.addEventListener("click", () => {
-        sent.replaceWith(form);
+        sent.remove();
+        form.hidden = false;
         input.focus();
       });
       sent.append(again);
-      form.replaceWith(sent);
+      // Hidden rather than detached, so the Turnstile frame inside the form keeps working.
+      form.hidden = true;
+      form.after(sent);
       sent.setAttribute("tabindex", "-1");
       sent.focus();
       announce(`Sign-in link sent to ${email}.`);
