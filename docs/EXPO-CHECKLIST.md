@@ -94,8 +94,21 @@ Dashboard page (`dashboard.html`, "Dashboard" in the main menu), with a summary 
 - [x] Messages (every demo conversation with its last message; reopen it)
 - [~] Company profile views: the dashboard explains that views from other members need accounts, and shows companies you viewed recently
 - [x] Opportunities (posted, with response counts, and the ones you responded to)
-- [x] Upcoming events (next expo, your meeting requests, and events announced by companies you follow)
-- [x] Your companies, with Open profile, Post an opportunity, and Share an update
+- [x] Upcoming events (events you RSVP'd to, events from companies you follow, the next expo, and your meeting requests)
+- [x] Events you're hosting
+- [x] Your companies, with Open profile, Post an opportunity, Share an update, and Host an event
+
+## Company-hosted events
+
+Companies host their own demos, workshops, open houses, and Q&As. Free reach only for now (no paid promotion).
+
+- [x] Host an event: name, online / in person / hybrid, date, start time, length, address, join link (https only, shown to people who RSVP), description, optional seat limit
+- [x] Listed in a homepage "Upcoming events" section (filters: online, in person, you're going, you're hosting), on the company profile, and in the activity feed; followers see it on their dashboards
+- [x] RSVP, attending as yourself or one of your companies; cancel the RSVP; seats left; full events closed
+- [x] Add to calendar (downloads a calendar file)
+- [x] Hosts can cancel an event, which also removes its feed post
+- [ ] RSVPs reaching the host, attendee lists, and reminders (needs accounts and a database)
+- [ ] Paid promotion or featured placement (owner decision on pricing)
 
 ## Flagship: AI Opportunity Rooms
 

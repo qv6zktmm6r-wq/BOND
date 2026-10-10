@@ -12,6 +12,8 @@
   const FOLLOWS_KEY = "bond.demo.follows";
   const POSTS_KEY = "bond.demo.posts";
   const VIEWED_KEY = "bond.demo.viewed";
+  const EVENTS_KEY = "bond.demo.events";
+  const RSVPS_KEY = "bond.demo.rsvps";
   const DAY_MS = 24 * 60 * 60 * 1000;
   const MAX_UPLOAD_BYTES = 1024 * 1024;
   const MAX_IMAGE_DATA_URL_LENGTH = 1.5 * 1024 * 1024;
@@ -224,8 +226,24 @@
     { id: "post-nova-event", companyId: "nova", type: "event", daysAgo: 5, text: "Our five-minute Spotlight premieres on the BOND main stage, with live Q&A right after. Bring your routing questions." },
     { id: "post-fieldstone-project", companyId: "fieldstone", type: "project", daysAgo: 6, text: "Topped out a two-story office building in San Diego. The glass storefront goes in next month." },
     { id: "post-aero-capability", companyId: "aero", type: "capability", daysAgo: 8, text: "Added harness routing and connector integration support for satellite subassemblies." },
-    { id: "post-creston-event", companyId: "creston", type: "event", daysAgo: 9, text: "Hosting a free workshop on turning a multi-team plan into one delivery timeline. Seats are limited." },
+    { id: "post-creston-event", companyId: "creston", type: "event", eventId: "evt-creston-workshop", daysAgo: 9, text: "Hosting a free workshop on turning a multi-team plan into one delivery timeline. Seats are limited." },
   ].map((post) => ({ ...post, at: new Date(Date.now() - post.daysAgo * DAY_MS).toISOString() }));
+  const eventFormats = { online: "Online", "in-person": "In person", hybrid: "Hybrid" };
+  const eventDurations = [30, 45, 60, 90, 120, 180, 240];
+  const sampleEvents = [
+    { id: "evt-lumen-demo", companyId: "lumen", title: "Live demo: dispatch dashboards for logistics teams", format: "online", inDays: 3, hour: 11, duration: 45, going: 18, capacity: 0, location: "",
+      description: "A short walkthrough of a sample dispatch dashboard, then open questions. Bring a routing or tracking problem you'd like to see on screen." },
+    { id: "evt-creston-workshop", companyId: "creston", title: "Workshop: one delivery timeline for a multi-team plan", format: "online", inDays: 6, hour: 10, duration: 60, going: 26, capacity: 40, location: "",
+      description: "A free working session on combining several teams' schedules into one delivery timeline that everyone can follow. Seats are limited." },
+    { id: "evt-fieldstone-open-house", companyId: "fieldstone", title: "Site open house: two-story office build", format: "in-person", inDays: 12, hour: 15, duration: 90, going: 9, capacity: 25, location: "San Diego, California",
+      description: "Walk the site with the project team, see the structure before the storefront goes in, and meet the trades who built it. Closed-toe shoes required." },
+    { id: "evt-helix-solar", companyId: "helix", title: "Commercial rooftop solar: planning Q&A", format: "hybrid", inDays: 20, hour: 13, duration: 60, going: 12, capacity: 0, location: "San Diego, California",
+      description: "Our engineers answer questions about rooftop solar for commercial buildings: roof checks, permitting, timelines, and how installation is planned. Join in person or online." },
+  ].map(({ inDays, hour, ...event }) => {
+    const start = new Date(Date.now() + inDays * DAY_MS);
+    start.setHours(hour, 0, 0, 0);
+    return { ...event, start: start.toISOString(), link: "", sample: true };
+  });
 
   const matchRelations = {
     "Aerospace & Defense": [["Engineering", "Partner", "Design and analysis support for programs"], ["Manufacturing", "Supplier", "Precision parts and prototypes"], ["Technology", "Supplier", "Software and data systems for programs"], ["Logistics", "Supplier", "Parts shipping and distribution"], ["Professional services", "Teaming", "Program management on larger bids"], ["Construction", "Supplier", "Facilities, hangars, and test sites"], ["Energy", "Partner", "Power and efficiency systems"]],
@@ -261,11 +279,14 @@
   const postedOpportunities = readPostedOpportunities();
   const responsesByOpportunity = readResponses();
   const followedCompanies = new Set(readStoredIds(FOLLOWS_KEY));
+  const hostedEvents = readHostedEvents();
+  const eventRsvps = readRsvps();
   const postedUpdates = readPostedUpdates();
   const recentlyViewed = readStoredIds(VIEWED_KEY).slice(0, 8);
   let currentFilter = "All";
   let currentOpportunityFilter = "All";
   let currentFeedFilter = "All";
+  let currentEventFilter = "All";
   let feedLimit = 8;
   let currentExpoProfile = sampleProfiles[0];
   let chatSequence = 0;
@@ -670,12 +691,123 @@
       const at = storedTime(item.at);
       if (typeof item.id !== "string" || !/^post-[a-z0-9-]{1,60}$/.test(item.id) || !postTypes[item.type]
         || !knownProfileId(item.companyId) || !text || !at) return [];
-      return [{ id: item.id, type: item.type, companyId: item.companyId, text, at, local: true }];
+      const post = { id: item.id, type: item.type, companyId: item.companyId, text, at, local: true };
+      if (findEvent(item.eventId)) post.eventId = item.eventId;
+      return [post];
     });
   }
 
   function savePostedUpdates() {
-    return writeStoredValue(POSTS_KEY, postedUpdates.map(({ id, type, companyId, text, at }) => ({ id, type, companyId, text, at })));
+    return writeStoredValue(POSTS_KEY, postedUpdates.map(({ id, type, companyId, text, at, eventId }) => ({ id, type, companyId, text, at, eventId })));
+  }
+
+  function normalizeEventLink(value) {
+    const text = cleanText(value, 300);
+    if (!text) return "";
+    try {
+      const url = new URL(text);
+      return url.protocol === "https:" && !url.username && !url.password ? url.href : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function readHostedEvents() {
+    const stored = readStoredValue(EVENTS_KEY);
+    if (!Array.isArray(stored)) return [];
+    return stored.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const title = cleanText(item.title, 100);
+      const description = cleanMessage(item.description).slice(0, 800);
+      const start = storedTime(item.start);
+      const at = storedTime(item.at);
+      const link = normalizeEventLink(item.link);
+      if (typeof item.id !== "string" || !/^evt-[a-z0-9-]{1,60}$/.test(item.id) || !knownProfileId(item.companyId)
+        || !eventFormats[item.format] || !eventDurations.includes(item.duration) || !title || !description || !start || !at || link === null) return [];
+      const capacity = Number.isInteger(item.capacity) && item.capacity > 0 && item.capacity <= 5000 ? item.capacity : 0;
+      return [{
+        id: item.id, companyId: item.companyId, title, format: item.format, start, duration: item.duration,
+        location: cleanText(item.location, 120), link, description, capacity, going: 0, at, local: true,
+      }];
+    });
+  }
+
+  function saveHostedEvents() {
+    return writeStoredValue(EVENTS_KEY, hostedEvents.map(({ id, companyId, title, format, start, duration, location, link, description, capacity, at }) => (
+      { id, companyId, title, format, start, duration, location, link, description, capacity, at })));
+  }
+
+  function allEvents() {
+    return [...hostedEvents, ...sampleEvents].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+  }
+
+  function findEvent(id) {
+    return typeof id === "string" ? allEvents().find((event) => event.id === id) || null : null;
+  }
+
+  function readRsvps() {
+    const result = Object.create(null);
+    const stored = readStoredValue(RSVPS_KEY);
+    if (!stored || typeof stored !== "object" || Array.isArray(stored)) return result;
+    for (const [id, entry] of Object.entries(stored)) {
+      const event = findEvent(id);
+      const at = storedTime(entry?.at);
+      if (!event || event.local || !at) continue;
+      result[id] = { from: knownProfileId(entry.from) ? entry.from : "", at };
+    }
+    return result;
+  }
+
+  function saveRsvps() {
+    return writeStoredValue(RSVPS_KEY, eventRsvps);
+  }
+
+  function eventEnd(event) {
+    return Date.parse(event.start) + event.duration * 60 * 1000;
+  }
+
+  function eventIsUpcoming(event) {
+    return eventEnd(event) > Date.now();
+  }
+
+  function eventGoing(event) {
+    return event.going + (eventRsvps[event.id] ? 1 : 0);
+  }
+
+  function eventWhen(event, { long = false } = {}) {
+    const start = new Date(event.start);
+    const end = new Date(eventEnd(event));
+    const dayOptions = long ? { weekday: "long", month: "long", day: "numeric" } : { weekday: "short", month: "short", day: "numeric" };
+    if (start.getFullYear() !== new Date().getFullYear()) dayOptions.year = "numeric";
+    const time = (date, zone) => date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", ...(zone ? { timeZoneName: "short" } : {}) });
+    const day = start.toLocaleDateString(undefined, dayOptions);
+    return long ? `${day} · ${time(start)} – ${time(end, true)}` : `${day} · ${time(start)}`;
+  }
+
+  function eventWhere(event) {
+    if (event.format === "online") return "Online";
+    return `${eventFormats[event.format]} · ${event.location || "Location shared with attendees"}`;
+  }
+
+  function downloadEventCalendar(event) {
+    const profile = resolveProfile(event.companyId);
+    const stamp = (time) => new Date(time).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+    const escape = (value) => String(value || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+    const details = `Hosted by ${profile ? profile.name : "a BOND company"} on BOND.\n\n${event.description}${event.link ? `\n\nJoin: ${event.link}` : ""}`;
+    const lines = [
+      "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//BOND//Member events//EN", "CALSCALE:GREGORIAN", "BEGIN:VEVENT",
+      `UID:${event.id}@joinbond.world`, `DTSTAMP:${stamp(Date.now())}`, `DTSTART:${stamp(event.start)}`, `DTEND:${stamp(eventEnd(event))}`,
+      `SUMMARY:${escape(event.title)}`, `LOCATION:${escape(event.format === "online" ? "Online" : event.location)}`, `DESCRIPTION:${escape(details)}`,
+      "END:VEVENT", "END:VCALENDAR",
+    ];
+    const url = URL.createObjectURL(new Blob([`${lines.join("\r\n")}\r\n`], { type: "text/calendar" }));
+    const link = element("a");
+    link.href = url;
+    link.download = `${event.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "bond-event"}.ics`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   function allPosts() {
@@ -1369,6 +1501,7 @@
     representative.append(element("p", "representative-name", profile.representative || "Representative not added"));
     representative.append(element("p", "representative-role", `${profile.representativeRole || "Company representative"} · Demo`));
     renderProfileOpportunities(profile, section("Opportunities", "", "opportunities", "Opportunities"));
+    renderCompanyEvents(profile, section("Upcoming events", "", "events", "Events"));
     renderCompanyPosts(profile, section("Activity", "", "activity", "Activity"));
     const matches = section("Suggested matches", "Customers, partners, suppliers, and teaming partners this company could work with.", "matches", "Matches");
     renderMatchList(profile, matches, { limit: 6 });
@@ -2947,7 +3080,16 @@
     card.setAttribute("aria-label", `${postTypes[post.type]} from ${profile.name}`);
     card.append(head, element("span", "feed-type", postTypes[post.type]), element("p", "feed-text", post.text));
     const actions = element("div", "feed-actions");
-    const talk = element("button", "button button-primary", "Start a conversation");
+    const linkedEvent = findEvent(post.eventId);
+    if (linkedEvent) {
+      const viewText = linkedEvent.local || eventRsvps[linkedEvent.id] || !eventIsUpcoming(linkedEvent) ? "View event" : "View and RSVP";
+      const viewEvent = element("button", "button button-primary", viewText);
+      viewEvent.type = "button";
+      viewEvent.setAttribute("aria-label", `${viewText}: ${linkedEvent.title}`);
+      viewEvent.addEventListener("click", () => openEvent(linkedEvent, viewEvent));
+      actions.append(viewEvent);
+    }
+    const talk = element("button", `button ${linkedEvent ? "button-secondary" : "button-primary"}`, "Start a conversation");
     talk.type = "button";
     talk.addEventListener("click", () => {
       const firstName = (profile.representative || "").split(" ")[0] || "there";
@@ -3090,6 +3232,354 @@
     textarea.focus();
   }
 
+  function eventCard(event, { showHost = true } = {}) {
+    const profile = resolveProfile(event.companyId);
+    const card = element("article", "event-card");
+    const title = element("h3", "", event.title);
+    title.id = `event-${event.id}-${showHost ? "card" : "profile"}`;
+    card.setAttribute("aria-labelledby", title.id);
+    const start = new Date(event.start);
+    const date = element("div", "event-date");
+    date.setAttribute("aria-hidden", "true");
+    date.append(element("span", "", start.toLocaleDateString(undefined, { month: "short" })), element("strong", "", String(start.getDate())));
+    const main = element("div", "event-card-main");
+    main.append(element("p", "event-kicker", `${eventFormats[event.format]} · ${eventWhen(event)}`), title);
+    if (showHost && profile) {
+      const host = element("button", "feed-company", `Hosted by ${profile.name}`);
+      host.type = "button";
+      host.addEventListener("click", () => openCompany(profile, host));
+      main.append(host);
+    }
+    if (event.format !== "online") main.append(element("p", "event-meta", event.location || "Location shared with attendees"));
+    const flags = element("p", "event-meta");
+    if (!eventIsUpcoming(event)) flags.append("Ended");
+    else if (event.local) flags.append("Your event · RSVPs from members arrive with BOND accounts");
+    else {
+      const going = eventGoing(event);
+      flags.append(`${going} going${event.capacity ? ` · ${Math.max(event.capacity - going, 0)} seats left` : ""}`);
+      if (eventRsvps[event.id]) flags.append(element("span", "event-going", "You're going"));
+    }
+    main.append(flags);
+    const viewText = event.local || eventRsvps[event.id] || !eventIsUpcoming(event) ? "View event" : "View and RSVP";
+    const view = element("button", "button button-secondary", viewText);
+    view.type = "button";
+    view.setAttribute("aria-label", `${viewText}: ${event.title}`);
+    view.addEventListener("click", () => openEvent(event, view));
+    main.append(view);
+    card.append(date, main);
+    return card;
+  }
+
+  function filteredEvents() {
+    return allEvents().filter((event) => eventIsUpcoming(event) && resolveProfile(event.companyId) && (
+      currentEventFilter === "All"
+      || (currentEventFilter === "Going" && eventRsvps[event.id])
+      || (currentEventFilter === "Hosting" && event.local)
+      || (currentEventFilter === "online" && event.format !== "in-person")
+      || (currentEventFilter === "in-person" && event.format !== "online")));
+  }
+
+  function renderEvents() {
+    const grid = document.getElementById("events-grid");
+    if (!grid) return;
+    const upcoming = allEvents().filter((event) => eventIsUpcoming(event) && resolveProfile(event.companyId));
+    const visible = filteredEvents();
+    grid.replaceChildren();
+    if (!visible.length) {
+      grid.append(element("p", "feed-empty", currentEventFilter === "Going"
+        ? "You haven't RSVP'd to an event yet. Open an event and tap RSVP to save your spot."
+        : currentEventFilter === "Hosting" ? "You're not hosting an event yet. Tap Host an event to schedule one." : "No upcoming events match this filter."));
+    }
+    visible.forEach((event) => grid.append(eventCard(event)));
+    document.querySelectorAll("[data-event-filter]").forEach((button) => {
+      const active = button.dataset.eventFilter === currentEventFilter;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    const status = document.getElementById("events-status");
+    if (status) {
+      const mine = hostedEvents.filter(eventIsUpcoming).length;
+      status.textContent = `Showing ${visible.length} of ${upcoming.length} upcoming events.${mine ? ` You're hosting ${mine}.` : ""}`;
+    }
+  }
+
+  function renderCompanyEvents(profile, block) {
+    let list = block.querySelector("[data-company-events]");
+    if (!list) {
+      list = element("div", "company-events");
+      list.dataset.companyEvents = profile.id;
+      block.append(list);
+    }
+    list.replaceChildren();
+    const events = allEvents().filter((event) => event.companyId === profile.id && eventIsUpcoming(event));
+    list.append(element("p", "dialog-copy", events.length
+      ? "Demos, workshops, open houses, and Q&As this company is hosting."
+      : profile.local ? "You haven't scheduled an event yet." : "No upcoming events."));
+    events.forEach((event) => list.append(eventCard(event, { showHost: false })));
+    if (profile.local) {
+      const host = element("button", "button button-secondary", "Host an event");
+      host.type = "button";
+      host.addEventListener("click", () => openHostEvent(host, profile.id));
+      list.append(host);
+    }
+  }
+
+  function refreshEvents() {
+    renderEvents();
+    document.querySelectorAll("[data-company-events]").forEach((list) => {
+      const profile = resolveProfile(list.dataset.companyEvents);
+      if (profile && list.parentElement) renderCompanyEvents(profile, list.parentElement);
+    });
+    refreshFeeds();
+  }
+
+  function cancelHostedEvent(event) {
+    const index = hostedEvents.findIndex((item) => item.id === event.id);
+    if (index !== -1) hostedEvents.splice(index, 1);
+    for (let i = postedUpdates.length - 1; i >= 0; i -= 1) {
+      if (postedUpdates[i].eventId === event.id) postedUpdates.splice(i, 1);
+    }
+    saveHostedEvents();
+    savePostedUpdates();
+    refreshEvents();
+  }
+
+  function openEvent(event, opener) {
+    const profile = resolveProfile(event.companyId);
+    const view = prepareDialog(`${eventFormats[event.format]} event · ${event.local ? "Hosted by you" : "Hosted on BOND"}`, event.title);
+    if (!view || !profile) return;
+    const { dialog, body } = view;
+    const host = element("div", "opportunity-poster");
+    const avatar = element("div", "company-avatar");
+    avatar.classList.toggle("has-uploaded-logo", Boolean(profile.logo));
+    avatar.append(companyLogo(profile));
+    const name = element("div", "opportunity-poster-name");
+    name.append(element("strong", "", profile.name), element("span", "", `Host · ${profile.category} · ${profile.location}`));
+    const openProfile = element("button", "company-link", "View company");
+    openProfile.type = "button";
+    openProfile.addEventListener("click", () => openCompany(profile, opener));
+    host.append(avatar, name, openProfile);
+    body.append(host);
+    const facts = element("dl", "event-facts");
+    const fact = (term, value) => {
+      const detail = element("dd", "", value);
+      facts.append(element("dt", "", term), detail);
+      return detail;
+    };
+    fact("When", eventWhen(event, { long: true }));
+    fact("Where", eventWhere(event));
+    if (event.capacity) fact("Seats", `${event.capacity} total`);
+    if (!event.local) fact("Going", "").classList.add("event-going-count");
+    body.append(facts, element("p", "dialog-copy event-description", event.description));
+    const rsvp = element("div", "event-rsvp");
+    body.append(rsvp);
+    renderEventRsvp(event, rsvp);
+    showDialog(dialog, opener);
+    rsvp.querySelector("button")?.focus();
+  }
+
+  function renderEventRsvp(event, container) {
+    container.replaceChildren();
+    const goingCount = container.parentElement?.querySelector(".event-going-count");
+    if (goingCount) goingCount.textContent = `${eventGoing(event)}${event.sample ? " (sample count)" : ""}`;
+    const calendar = () => {
+      const button = element("button", "button button-secondary", "Add to calendar");
+      button.type = "button";
+      button.addEventListener("click", () => {
+        downloadEventCalendar(event);
+        announce("Calendar file downloaded. Open it to add the event to your calendar.");
+      });
+      return button;
+    };
+    const joinLink = () => {
+      if (!event.link || event.format === "in-person") return null;
+      const link = element("a", "company-link event-join", "Join link");
+      link.href = event.link;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      return link;
+    };
+    const actions = element("div", "chat-actions");
+    if (!eventIsUpcoming(event)) {
+      container.append(element("p", "dialog-copy", "This event has ended."));
+      return;
+    }
+    if (event.local) {
+      container.append(element("h3", "detail-label", "You're hosting this event"));
+      container.append(element("p", "dialog-copy", "It's listed under Upcoming events, on your company profile, and in the activity feed, so followers see it on their dashboards. RSVPs from other members arrive once BOND launches accounts; this preview can't receive them from other people's browsers."));
+      actions.append(calendar());
+      const link = joinLink();
+      if (link) actions.append(link);
+      const cancel = element("button", "danger-link", "Cancel this event");
+      cancel.type = "button";
+      cancel.addEventListener("click", () => {
+        if (cancel.dataset.confirm !== "yes") {
+          cancel.dataset.confirm = "yes";
+          cancel.textContent = "Tap again to cancel the event";
+          return;
+        }
+        cancelHostedEvent(event);
+        document.getElementById("company-dialog")?.close();
+        announce("Your event was cancelled and removed.");
+      });
+      actions.append(cancel);
+      container.append(actions);
+      return;
+    }
+    const mine = eventRsvps[event.id];
+    if (mine) {
+      const as = resolveProfile(mine.from);
+      container.append(element("h3", "detail-label", "You're going"));
+      container.append(element("p", "dialog-copy", `RSVP'd ${shortDate(mine.at)}${as ? ` as ${as.name}` : ""}. Saved in this browser; the host gets your RSVP once BOND launches accounts.`));
+      actions.append(calendar());
+      const link = joinLink();
+      if (link) actions.append(link);
+      const cancel = element("button", "danger-link", "Cancel my RSVP");
+      cancel.type = "button";
+      cancel.addEventListener("click", () => {
+        delete eventRsvps[event.id];
+        saveRsvps();
+        refreshEvents();
+        renderEventRsvp(event, container);
+        container.querySelector("button")?.focus();
+        announce("Your RSVP was cancelled.");
+      });
+      actions.append(cancel);
+      container.append(actions);
+      return;
+    }
+    if (event.capacity && eventGoing(event) >= event.capacity) {
+      container.append(element("p", "dialog-copy", "This event is full."));
+      return;
+    }
+    container.append(element("h3", "detail-label", "Save your spot"));
+    const form = element("form", "chat-form");
+    const picker = companyPicker(`rsvp-company-${event.id}`, "Attending as", { includeNone: true });
+    const submit = element("button", "button button-primary", "RSVP: I'll be there");
+    submit.type = "submit";
+    form.append(picker.label, picker.select, submit);
+    form.addEventListener("submit", (submitEvent) => {
+      submitEvent.preventDefault();
+      eventRsvps[event.id] = { from: knownProfileId(picker.select.value) ? picker.select.value : "", at: new Date().toISOString() };
+      const persisted = saveRsvps();
+      refreshEvents();
+      renderEventRsvp(event, container);
+      container.querySelector("button")?.focus();
+      announce(persisted ? "You're going. Your RSVP is saved in this browser." : "You're going for this visit; browser storage is unavailable.");
+    });
+    container.append(form);
+  }
+
+  function localDateValue(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  }
+
+  function openHostEvent(opener, companyId = "") {
+    const view = prepareDialog("Events · Host an event", "Schedule your event");
+    if (!view) return;
+    const { dialog, body } = view;
+    body.append(element("p", "dialog-copy", "Host a demo, workshop, open house, or Q&A. It's listed under Upcoming events, on your company profile, and in the activity feed, where followers see it."));
+    const form = element("form", "opportunity-form event-form");
+    const picker = companyPicker("event-company", "Hosted by", { selected: companyId });
+    if (!picker.hasOwn) createProfileHint(body);
+    const field = (tag, id, labelText, attributes = {}) => {
+      const label = element("label", "", labelText);
+      label.htmlFor = id;
+      const input = element(tag);
+      input.id = id;
+      Object.assign(input, attributes);
+      form.append(label, input);
+      return input;
+    };
+    form.append(picker.label, picker.select);
+    const title = field("input", "event-title", "Event name", { maxLength: 100, required: true, placeholder: "Open house at our new shop" });
+    const formatLabel = element("label", "", "Format");
+    formatLabel.htmlFor = "event-format";
+    const format = element("select");
+    format.id = "event-format";
+    for (const [value, text] of Object.entries(eventFormats)) format.append(new Option(text, value));
+    form.append(formatLabel, format);
+    const tomorrow = new Date(Date.now() + DAY_MS);
+    const date = field("input", "event-date", "Date", { type: "date", required: true, value: localDateValue(tomorrow), min: localDateValue(new Date()), max: localDateValue(new Date(Date.now() + 365 * DAY_MS)) });
+    const time = field("input", "event-time", "Start time", { type: "time", required: true, value: "10:00" });
+    const durationLabel = element("label", "", "Length");
+    durationLabel.htmlFor = "event-duration";
+    const duration = element("select");
+    duration.id = "event-duration";
+    eventDurations.forEach((minutes) => duration.append(new Option(minutes < 60 ? `${minutes} minutes` : `${minutes / 60} ${minutes === 60 ? "hour" : "hours"}`, String(minutes))));
+    duration.value = "60";
+    form.append(durationLabel, duration);
+    const location = field("input", "event-location", "Address or city", { maxLength: 120, placeholder: "1200 Harbor Dr, San Diego" });
+    const locationHint = element("p", "form-hint", "Needed for in-person and hybrid events.");
+    form.append(locationHint);
+    const link = field("input", "event-link", "Join link (optional)", { type: "url", maxLength: 300, placeholder: "https://…" });
+    const linkHint = element("p", "form-hint", "For online and hybrid events. Only people who RSVP see it.");
+    form.append(linkHint);
+    const description = field("textarea", "event-description", "What will happen?", { rows: 4, maxLength: 800, required: true, placeholder: "What attendees will see, learn, or get to ask." });
+    description.classList.add("chat-input");
+    const capacity = field("input", "event-capacity", "Seats (optional)", { type: "number", min: "1", max: "5000", inputMode: "numeric", placeholder: "No limit" });
+    const status = element("p", "chat-status");
+    status.setAttribute("role", "status");
+    const submit = element("button", "button button-primary", "Host this event");
+    submit.type = "submit";
+    const actions = element("div", "chat-actions");
+    actions.append(submit, dictationButton(description, status));
+    form.append(actions, status);
+    const syncFormat = () => {
+      const online = format.value === "online";
+      location.required = !online;
+      location.disabled = online;
+      link.disabled = format.value === "in-person";
+      locationHint.textContent = online ? "Not needed for online events." : "Needed for in-person and hybrid events.";
+      linkHint.textContent = format.value === "in-person" ? "Not needed for in-person events." : "For online and hybrid events. Only people who RSVP see it.";
+    };
+    format.addEventListener("change", syncFormat);
+    format.value = "in-person";
+    syncFormat();
+    form.addEventListener("submit", (submitEvent) => {
+      submitEvent.preventDefault();
+      const fail = (message, input) => {
+        status.textContent = message;
+        input.focus();
+      };
+      const host = knownProfileId(picker.select.value) ? picker.select.value : "";
+      const name = cleanText(title.value, 100);
+      const details = cleanMessage(description.value).slice(0, 800);
+      const chosenFormat = eventFormats[format.value] ? format.value : "in-person";
+      const start = /^\d{4}-\d{2}-\d{2}$/.test(date.value) && /^\d{2}:\d{2}$/.test(time.value) ? new Date(`${date.value}T${time.value}`) : null;
+      const where = chosenFormat === "online" ? "" : cleanText(location.value, 120);
+      const joinUrl = chosenFormat === "in-person" ? "" : normalizeEventLink(link.value);
+      const seats = capacity.value ? Number(capacity.value) : 0;
+      if (!host) return fail("Choose the company hosting this event.", picker.select);
+      if (!name) return fail("Give your event a name.", title);
+      if (!start || !Number.isFinite(start.getTime()) || start.getTime() <= Date.now()) return fail("Pick a date and start time in the future.", date);
+      if (start.getTime() > Date.now() + 366 * DAY_MS) return fail("Pick a date within the next year.", date);
+      if (chosenFormat !== "online" && !where) return fail("Add an address or city for in-person and hybrid events.", location);
+      if (joinUrl === null) return fail("Use a secure https:// join link.", link);
+      if (!Number.isInteger(seats) || seats < 0 || seats > 5000) return fail("Seats must be a whole number up to 5,000.", capacity);
+      if (!details) return fail("Describe what will happen at the event.", description);
+      const record = {
+        id: newId("evt"), companyId: host, title: name, format: chosenFormat, start: start.toISOString(),
+        duration: eventDurations.includes(Number(duration.value)) ? Number(duration.value) : 60,
+        location: where, link: joinUrl, description: details, capacity: seats, going: 0, at: new Date().toISOString(), local: true,
+      };
+      hostedEvents.push(record);
+      const persisted = saveHostedEvents();
+      postedUpdates.unshift({
+        id: newId("post"), type: "event", companyId: host, eventId: record.id, at: record.at, local: true,
+        text: `We're hosting "${name}" on ${eventWhen(record)}. ${eventWhere(record)}.`,
+      });
+      savePostedUpdates();
+      currentEventFilter = "All";
+      refreshEvents();
+      openEvent(record, opener);
+      announce(persisted ? "Your event is scheduled. It's saved in this browser." : "Your event is scheduled for this visit; browser storage is unavailable.");
+    });
+    body.append(form);
+    showDialog(dialog, opener);
+    title.focus();
+  }
+
   function dashboardSection(container, id, title, copy) {
     const block = element("section", "dashboard-section");
     block.id = id;
@@ -3169,10 +3659,13 @@
       .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
     const responded = allOpportunities().filter((opportunity) => !opportunity.local && (responsesByOpportunity[opportunity.id] || []).length);
     const responsesSent = responded.reduce((total, opportunity) => total + responsesByOpportunity[opportunity.id].length, 0);
+    const hosting = allEvents().filter((event) => event.local && resolveProfile(event.companyId));
+    const hostingUpcoming = hosting.filter(eventIsUpcoming);
+    const attending = allEvents().filter((event) => eventRsvps[event.id] && eventIsUpcoming(event) && resolveProfile(event.companyId));
 
     const head = element("header", "dashboard-head");
     head.append(element("p", "dialog-kicker", "Your BOND"), element("h1", "", "Your dashboard"));
-    head.append(element("p", "dialog-copy", "Your companies, connections, messages, opportunities, and upcoming events in one place. Everything here is saved in this browser; accounts that sync across devices come with BOND's launch."));
+    head.append(element("p", "dialog-copy", "Your companies, connections, messages, opportunities, and events in one place. Everything here is saved in this browser; accounts that sync across devices come with BOND's launch."));
     const stats = element("ul", "dashboard-stats");
     stats.setAttribute("aria-label", "Summary");
     for (const [count, label, anchor] of [
@@ -3182,7 +3675,8 @@
       [conversations.length, conversations.length === 1 ? "Conversation" : "Conversations", "messages"],
       [postedOpportunities.length, "Opportunities posted", "opportunities"],
       [responsesSent, responsesSent === 1 ? "Response sent" : "Responses sent", "opportunities"],
-      [meetings.length, "Meetings requested", "events"],
+      [hostingUpcoming.length, "Events hosting", "hosting"],
+      [attending.length, "Events attending", "events"],
     ]) {
       const item = element("li");
       const link = dashboardLink("", `#${anchor}`, "dashboard-stat");
@@ -3201,6 +3695,7 @@
           dashboardLink("Open profile", `company.html?id=${encodeURIComponent(profile.id)}`, "button button-secondary"),
           dashboardButton("Post an opportunity", "button button-secondary", `post-${profile.id}`, (button) => openPostOpportunity(button, profile.id)),
           dashboardButton("Share an update", "button button-secondary", `share-${profile.id}`, (button) => openShareUpdate(button, profile.id)),
+          dashboardButton("Host an event", "button button-secondary", `host-${profile.id}`, (button) => openHostEvent(button, profile.id)),
         );
         list.append(row);
       }
@@ -3277,23 +3772,62 @@
       dashboardEmpty(opportunities, "Respond to a request on the Opportunity Board to keep track of it here.", dashboardLink("Open the Opportunity Board", "index.html#opportunities"));
     }
 
+    const viewEventButton = (event, key, text = "View") => dashboardButton(text, "button button-secondary", key, (button) => openEvent(event, button), `${text}: ${event.title}`);
+
+    const hostingBlock = dashboardSection(container, "hosting", "Events you're hosting", "Demos, workshops, open houses, and Q&As your companies scheduled. Followers see them in their feed and on their dashboards.");
+    if (hosting.length) {
+      const list = element("ul", "dashboard-list");
+      for (const event of hosting) {
+        const host = resolveProfile(event.companyId);
+        list.append(dashboardItemRow(event.title,
+          `${host.name} · ${eventWhen(event)} · ${eventWhere(event)}${eventIsUpcoming(event) ? "" : " · Ended"}`,
+          viewEventButton(event, `hosting-${event.id}`)));
+      }
+      hostingBlock.append(list);
+      hostingBlock.append(element("p", "form-hint", "RSVPs from other members will appear here once BOND launches accounts. This preview can't receive RSVPs from other people's browsers."));
+    } else {
+      dashboardEmpty(hostingBlock, "You haven't scheduled an event yet.",
+        dashboardButton("Host an event", "button button-primary", "host-any", (button) => openHostEvent(button, own[0]?.id || "")));
+    }
+
     const events = dashboardSection(container, "events", "Upcoming events");
     const eventList = element("ul", "dashboard-list");
+    for (const event of attending) {
+      const host = resolveProfile(event.companyId);
+      const row = dashboardItemRow(event.title, `${host.name} · ${eventWhen(event)} · ${eventWhere(event)}`, viewEventButton(event, `upcoming-${event.id}`));
+      const tags = element("span", "dashboard-tags");
+      tags.append(element("span", "dashboard-tag", "You're going"));
+      row.querySelector(".dashboard-row-main").append(tags);
+      eventList.append(row);
+    }
     eventList.append(dashboardItemRow("Nova Logistics Spotlight premiere, then live Q&A", "Live expos · Main stage · Sample event",
       dashboardLink("Go to the expo", "expos.html", "button button-secondary")));
+    const followedUpcoming = allEvents().filter((event) => !event.local && !eventRsvps[event.id] && eventIsUpcoming(event) && followedCompanies.has(event.companyId));
+    for (const event of followedUpcoming) {
+      const host = resolveProfile(event.companyId);
+      if (!host) continue;
+      const row = dashboardItemRow(event.title, `${host.name} · ${eventWhen(event)} · ${eventWhere(event)}`, viewEventButton(event, `upcoming-${event.id}`, "View and RSVP"));
+      const tags = element("span", "dashboard-tags");
+      tags.append(element("span", "dashboard-tag", "From a company you follow"));
+      row.querySelector(".dashboard-row-main").append(tags);
+      eventList.append(row);
+    }
     for (const meeting of meetings) {
       eventList.append(dashboardItemRow(`Meeting request: ${meeting.profile.name}`, `Requested ${shortDate(meeting.at)} · scheduling opens when BOND launches`,
         dashboardButton("Message", "button button-secondary", `meeting-${meeting.profile.id}`, (button) => openConversation(meeting.profile, button))));
     }
-    const followedEvents = allPosts().filter((post) => post.type === "event" && followedCompanies.has(post.companyId));
-    for (const post of followedEvents) {
+    const followedAnnouncements = allPosts().filter((post) => post.type === "event" && !post.eventId && followedCompanies.has(post.companyId));
+    for (const post of followedAnnouncements) {
       const profile = resolveProfile(post.companyId);
       if (!profile) continue;
-      eventList.append(dashboardItemRow(`${profile.name}: ${post.text}`, `Upcoming event · shared ${timeAgo(post.at).toLocaleLowerCase()}`,
+      eventList.append(dashboardItemRow(`${profile.name}: ${post.text}`, `Event announcement · shared ${timeAgo(post.at).toLocaleLowerCase()}`,
         dashboardButton("View company", "button button-secondary", `event-${post.id}`, (button) => openCompany(profile, button))));
     }
     events.append(eventList);
-    if (!followedEvents.length) events.append(element("p", "form-hint", "Follow companies to see the events they announce here."));
+    const hint = element("p", "form-hint");
+    hint.append(followedCompanies.size ? "Events you RSVP to and events from companies you follow show up here. " : "RSVP to an event, or follow companies to see the events they host here. ");
+    hint.append(dashboardLink("Browse all upcoming events", "index.html#events"));
+    events.append(hint);
 
     if (recentlyViewed.length) {
       const viewed = dashboardSection(container, "viewed", "Recently viewed companies");
@@ -3740,6 +4274,17 @@
         renderFeed();
       });
     });
+    document.querySelectorAll("[data-host-event]").forEach((button) => {
+      button.addEventListener("click", () => openHostEvent(button));
+    });
+    document.querySelectorAll("[data-event-filter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const next = button.dataset.eventFilter;
+        if (!["All", "online", "in-person", "Going", "Hosting"].includes(next)) return;
+        currentEventFilter = next;
+        renderEvents();
+      });
+    });
 
     const form = document.getElementById("join-form");
     const uploads = form ? configureProfileUploads(form) : null;
@@ -3843,6 +4388,7 @@
     renderMatchmaker();
     renderExpoFloor();
     renderOpportunities();
+    renderEvents();
     renderFeed();
     renderFullCompanyProfile();
     if (document.getElementById("member-dashboard")) {
