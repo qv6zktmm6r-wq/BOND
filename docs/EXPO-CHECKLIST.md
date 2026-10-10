@@ -134,7 +134,7 @@ Working in the preview: rooms are saved in the visitor's browser, the project re
 ## Platform: needed for a real launch (owner decisions)
 
 - [~] Accounts and sign-in for companies (Supabase, free plan): email sign-in links, company profiles saved to the database with logo and cover uploads, edit and delete, and moving browser drafts into the account. Built on `feature/accounts`; switched on for previews and local development only
-- [x] BOND's own email sender: sign-in emails go out through Resend from `no-reply@joinbond.world` (domain verified with DKIM, SPF, and DMARC records at Namecheap; up to 30 sign-in emails an hour)
+- [x] BOND's own email sender: sign-in emails go out through Resend from `no-reply@joinbond.world` (domain verified with DKIM, SPF, and DMARC records at Namecheap). Sign-in emails are capped at 5 an hour until bot protection is on; raise the cap (`rate_limit_email_sent`) at launch
 - [ ] Switch on public sign-in at joinbond.world (`PUBLIC_ACCOUNTS` in `dist/app.js`), ideally together with bot protection below
 - [ ] Bot protection on the sign-in form (CAPTCHA) before public launch, and a review of Supabase's sign-in email rate limits
 - [ ] Delete-my-account option that also removes the account's logo and cover files from storage
