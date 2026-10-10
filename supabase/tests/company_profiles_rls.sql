@@ -70,6 +70,59 @@ begin
   select owner_id into owner_after from public.company_profiles where id = profile_a;
   insert into rls_results values ('owner can update but not hand the profile to someone else', owner_after = user_a);
 
+  update public.company_profiles set id = gen_random_uuid() where id = profile_a;
+  insert into rls_results values ('profile id cannot be changed', exists (select 1 from public.company_profiles where id = profile_a));
+
+  begin
+    insert into public.company_profiles (name, industry, description) values ('A' || repeat(' ', 200), 'Energy', 'Padded name');
+    insert into rls_results values ('whitespace-padded name is rejected', false);
+  exception when check_violation then
+    insert into rls_results values ('whitespace-padded name is rejected', true);
+  end;
+
+  begin
+    insert into public.company_profiles (name, industry, description, publish_contact, public_phone) values ('Phone', 'Energy', 'Bad phone', true, 'call me maybe');
+    insert into rls_results values ('malformed phone is rejected', false);
+  exception when check_violation then
+    insert into rls_results values ('malformed phone is rejected', true);
+  end;
+
+  begin
+    update public.company_profiles set logo_path = user_a::text || '/' || gen_random_uuid()::text || '/logo.png' where id = profile_a;
+    insert into rls_results values ('image path for another profile is rejected', false);
+  exception when check_violation then
+    insert into rls_results values ('image path for another profile is rejected', true);
+  end;
+
+  update public.company_profiles set logo_path = user_a::text || '/' || profile_a::text || '/logo.webp' where id = profile_a;
+  insert into rls_results values ('exact image path for own profile is accepted', (select logo_path <> '' from public.company_profiles where id = profile_a));
+
+  insert into storage.objects (bucket_id, name) values ('company-media', user_a::text || '/' || profile_a::text || '/logo.webp');
+  insert into rls_results values ('member uploads media for own profile', true);
+
+  begin
+    insert into storage.objects (bucket_id, name) values ('company-media', user_a::text || '/' || gen_random_uuid()::text || '/logo.png');
+    insert into rls_results values ('upload for a profile that is not yours is rejected', false);
+  exception when insufficient_privilege then
+    insert into rls_results values ('upload for a profile that is not yours is rejected', true);
+  end;
+
+  begin
+    insert into storage.objects (bucket_id, name) values ('company-media', user_a::text || '/' || profile_a::text || '/extra-file.png');
+    insert into rls_results values ('upload with an unexpected file name is rejected', false);
+  exception when insufficient_privilege then
+    insert into rls_results values ('upload with an unexpected file name is rejected', true);
+  end;
+
+  perform set_config('request.jwt.claims', json_build_object('sub', user_a, 'role', 'authenticated', 'is_anonymous', true)::text, true);
+  begin
+    insert into public.company_profiles (name, industry, description) values ('Anon', 'Energy', 'Anonymous session');
+    insert into rls_results values ('anonymous sessions cannot write', false);
+  exception when insufficient_privilege then
+    insert into rls_results values ('anonymous sessions cannot write', true);
+  end;
+  perform set_config('request.jwt.claims', json_build_object('sub', user_a, 'role', 'authenticated')::text, true);
+
   -- Member B cannot change or delete A's profile.
   perform set_config('request.jwt.claims', json_build_object('sub', user_b, 'role', 'authenticated')::text, true);
   update public.company_profiles set name = 'Hijacked' where id = profile_a;

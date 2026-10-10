@@ -135,7 +135,9 @@ Working in the preview: rooms are saved in the visitor's browser, the project re
 
 - [~] Accounts and sign-in for companies (Supabase, free plan): email sign-in links, company profiles saved to the database with logo and cover uploads, edit and delete, and moving browser drafts into the account. Built on `feature/accounts`; switched on for previews and local development only
 - [!] Public sign-in on joinbond.world needs BOND's own email sender (for example Resend on joinbond.world, with DNS records at Namecheap). Supabase's built-in sender is limited to about 2 emails an hour and is meant for testing; once the sender is set, flip `PUBLIC_ACCOUNTS` in `dist/app.js`
-- [ ] Bot protection on the sign-in form (CAPTCHA) before public launch
+- [ ] Bot protection on the sign-in form (CAPTCHA) before public launch, and a review of Supabase's sign-in email rate limits
+- [ ] Delete-my-account option that also removes the account's logo and cover files from storage
+- [ ] Decide whether profile owner ids stay publicly readable (today they show which companies share one account)
 - [ ] Representative sign-in and roles (several people managing one company)
 - [~] Database for profiles (done on `feature/accounts`), messages, meetings, opportunities, and follows (still in the browser)
 - [ ] Business claiming and verification; certification verification (VOSB/SDVOSB and others)

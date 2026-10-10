@@ -20,6 +20,7 @@
   const SUPABASE_SCRIPT = "vendor/supabase-2.117.3.js";
   const MEDIA_BUCKET = "company-media";
   const PROFILES_TABLE = "company_profiles";
+  const PROFILE_COLUMNS = "id,owner_id,name,industry,description,location,tagline,story,services,certifications,projects,service_area,company_size,ownership,representative,website,publish_contact,public_email,public_phone,logo_path,cover_path,updated_at";
   const AUTH_STORAGE_KEY = "bond.auth";
   const FLASH_KEY = "bond.flash";
   const MAX_MEMBER_PROFILES = 5;
@@ -5282,7 +5283,7 @@
   }
 
   async function loadMemberProfiles() {
-    const { data, error } = await account.client.from(PROFILES_TABLE).select("*").order("created_at", { ascending: true }).limit(500);
+    const { data, error } = await account.client.from(PROFILES_TABLE).select(PROFILE_COLUMNS).order("created_at", { ascending: true }).limit(500);
     if (error) {
       account.error = "Member companies couldn't load right now. Refresh the page to try again.";
       return;
@@ -5593,15 +5594,26 @@
     let failure = "";
     for (const draft of drafts.slice(0, room)) {
       status.textContent = `Moving ${draft.name}…`;
+      let profile;
       try {
-        const { profile } = await saveMemberProfile(detailsFromProfile(draft), { logo: draft.logo || "", cover: draft.cover || "" }, null);
+        const saved = await saveMemberProfile(detailsFromProfile(draft), { logo: draft.logo || "", cover: draft.cover || "" }, null);
+        profile = saved.profile;
+        if (!saved.imagesSaved) {
+          await deleteOwnProfile(profile).catch(() => {});
+          throw new Error(`The images for ${draft.name} couldn't be uploaded, so it stays a draft in this browser. Try again in a moment.`);
+        }
         const media = await readProfileMedia(draft);
         if (media.video || media.photos.length) await saveProfileMedia(profile.id, media).catch(() => {});
         remapStoredCompanyId(draft.id, profile.id);
-        await deleteOwnProfile(draft);
-        moved += 1;
       } catch (error) {
         failure = error.message || "A draft couldn't be moved.";
+        break;
+      }
+      moved += 1;
+      try {
+        await deleteOwnProfile(draft);
+      } catch {
+        failure = `${draft.name} is published, but its browser draft couldn't be removed. Delete the draft yourself so it isn't moved twice.`;
         break;
       }
     }
@@ -5648,7 +5660,8 @@
 
   function resolveProfile(value) {
     const key = String(value || "").trim().toLocaleLowerCase();
-    return profiles.find((profile) => profile.id === key || profile.name.toLocaleLowerCase() === key || profile.name.toLocaleLowerCase().replace(/\s+/g, "-") === key);
+    return profiles.find((profile) => profile.id === key)
+      || profiles.find((profile) => !profile.member && (profile.name.toLocaleLowerCase() === key || profile.name.toLocaleLowerCase().replace(/\s+/g, "-") === key));
   }
 
   function announce(message) {
