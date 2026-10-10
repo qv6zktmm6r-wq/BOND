@@ -136,7 +136,7 @@ Working in the preview: rooms are saved in the visitor's browser, the project re
 - [x] Accounts and sign-in for companies (Supabase, free plan): email sign-in links, company profiles saved to the database with logo and cover uploads, edit and delete, and moving browser drafts into the account. Live on joinbond.world
 - [x] BOND's own email sender: sign-in emails go out through Resend from `no-reply@joinbond.world` (domain verified with DKIM, SPF, and DMARC records at Namecheap), with BOND-branded sign-in emails
 - [x] Bot protection on the sign-in form (Cloudflare Turnstile, checked by Supabase on every sign-in request); sign-in emails capped at 30 an hour project-wide
-- [ ] Delete-my-account option that also removes the account's logo and cover files from storage
+- [x] Delete-my-account option (Account dialog, confirmed by typing your email) that also removes the account's company profiles and their logo and cover files from storage
 - [ ] Decide whether profile owner ids stay publicly readable (today they show which companies share one account)
 - [ ] Representative sign-in and roles (several people managing one company)
 - [~] Database for profiles (done on `feature/accounts`), messages, meetings, opportunities, and follows (still in the browser)

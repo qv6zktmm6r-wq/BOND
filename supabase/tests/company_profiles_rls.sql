@@ -150,7 +150,45 @@ begin
   get diagnostics affected = row_count;
   insert into rls_results values ('owner can delete', affected = 1);
 
+  -- Deleting an account.
+  perform set_config('role', 'anon', true);
+  perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+  begin
+    perform public.delete_my_account();
+    insert into rls_results values ('visitors cannot delete accounts', false);
+  exception when insufficient_privilege then
+    insert into rls_results values ('visitors cannot delete accounts', true);
+  end;
+
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', user_a, 'role', 'authenticated', 'is_anonymous', true)::text, true);
+  begin
+    perform public.delete_my_account();
+    insert into rls_results values ('anonymous sessions cannot delete an account', false);
+  exception when insufficient_privilege then
+    insert into rls_results values ('anonymous sessions cannot delete an account', true);
+  end;
+
+  perform set_config('request.jwt.claims', json_build_object('sub', user_a, 'role', 'authenticated')::text, true);
+  insert into public.company_profiles (name, industry, description) values ('A Again', 'Energy', 'Member A company');
+  begin
+    perform public.delete_my_account();
+    insert into rls_results values ('account deletion waits until uploaded images are removed', false);
+  exception when object_not_in_prerequisite_state then
+    insert into rls_results values ('account deletion waits until uploaded images are removed', true);
+  end;
   perform set_config('role', 'postgres', true);
+  insert into rls_results values ('a refused deletion keeps the account', exists (select 1 from auth.users where id = user_a));
+  perform set_config('role', 'authenticated', true);
+
+  perform set_config('storage.allow_delete_query', 'true', true);
+  delete from storage.objects where bucket_id = 'company-media' and name like user_a::text || '/%';
+  perform set_config('storage.allow_delete_query', 'false', true);
+  perform public.delete_my_account();
+  perform set_config('role', 'postgres', true);
+  insert into rls_results values ('member deletes their own account', not exists (select 1 from auth.users where id = user_a));
+  insert into rls_results values ('their company profiles are deleted with it', not exists (select 1 from public.company_profiles where owner_id = user_a));
+  insert into rls_results values ('other accounts are untouched', exists (select 1 from auth.users where id = user_b) and (select count(*) from public.company_profiles where owner_id = user_b) = 5);
 end;
 $$;
 

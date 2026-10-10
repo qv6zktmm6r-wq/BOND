@@ -5475,7 +5475,10 @@
         announce("You're signed out.");
       });
       actions.append(dashboard, signOut);
-      body.append(actions);
+      const remove = element("button", "danger-link account-delete", "Delete your account");
+      remove.type = "button";
+      remove.addEventListener("click", () => openDeleteAccount(opener));
+      body.append(actions, remove);
       showDialog(dialog, opener);
       return;
     }
@@ -5545,6 +5548,104 @@
     body.append(form);
     showDialog(dialog, opener);
     input.focus();
+  }
+
+  function openDeleteAccount(opener) {
+    const view = prepareDialog("Your BOND account", "Delete your account?");
+    if (!view) return;
+    const { dialog, body } = view;
+    if (!account.client || !account.user) {
+      body.append(element("p", "dialog-copy", "Your sign-in expired. Sign in again to delete your account."));
+      showDialog(dialog, opener);
+      return;
+    }
+    const email = account.user.email || "";
+    const published = profiles.filter((profile) => profile.member && profile.mine).length;
+    body.append(element("p", "dialog-copy", published
+      ? `This permanently deletes the BOND account for ${email} and its ${published} published company ${published === 1 ? "profile" : "profiles"}, including logos and cover images. Other members won't see ${published === 1 ? "it" : "them"} anymore.`
+      : `This permanently deletes the BOND account for ${email}.`));
+    body.append(element("p", "dialog-copy", "It can't be undone. Drafts, messages, and anything else saved only in this browser stay here."));
+    const form = element("form", "account-form");
+    form.noValidate = true;
+    const label = element("label", "", "Type your email to confirm");
+    label.htmlFor = "account-delete-email";
+    const input = element("input");
+    Object.assign(input, { id: "account-delete-email", type: "email", name: "email", autocomplete: "off", maxLength: 160, required: true });
+    input.setAttribute("aria-describedby", "account-delete-status");
+    const actions = element("div", "account-actions");
+    const submit = element("button", "button account-delete-confirm", "Delete my account");
+    submit.type = "submit";
+    const keep = element("button", "button button-outline", "Keep my account");
+    keep.type = "button";
+    keep.addEventListener("click", () => openAccount(opener));
+    actions.append(submit, keep);
+    const status = element("p", "form-help", "");
+    status.id = "account-delete-status";
+    status.setAttribute("role", "status");
+    form.append(label, input, actions, status);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (cleanText(input.value, 160).toLowerCase() !== email.toLowerCase()) {
+        input.setAttribute("aria-invalid", "true");
+        status.textContent = `Type ${email} exactly to confirm.`;
+        input.focus();
+        return;
+      }
+      input.removeAttribute("aria-invalid");
+      submit.disabled = true;
+      keep.disabled = true;
+      status.textContent = "Deleting your account…";
+      try {
+        await deleteAccount();
+      } catch (error) {
+        submit.disabled = false;
+        keep.disabled = false;
+        status.textContent = error.message || "Your account couldn't be deleted. Check your connection and try again.";
+        return;
+      }
+      dialog.close();
+      announce("Your BOND account and its company profiles were deleted.");
+    });
+    body.append(form);
+    showDialog(dialog, opener);
+    input.focus();
+  }
+
+  async function deleteAccount() {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again to delete your account.");
+    const failed = "Your account couldn't be deleted. Check your connection and try again.";
+    const userId = account.user.id;
+    const bucket = account.client.storage.from(MEDIA_BUCKET);
+    const { data: folders, error: listError } = await bucket.list(userId, { limit: 100 });
+    if (listError) throw new Error(failed);
+    const paths = [];
+    for (const entry of folders || []) {
+      if (entry.id) {
+        paths.push(`${userId}/${entry.name}`);
+        continue;
+      }
+      const { data: files, error } = await bucket.list(`${userId}/${entry.name}`, { limit: 100 });
+      if (error) throw new Error(failed);
+      for (const file of files || []) if (file.id) paths.push(`${userId}/${entry.name}/${file.name}`);
+    }
+    if (paths.length) {
+      const { error } = await bucket.remove(paths);
+      if (error) throw new Error(failed);
+    }
+    const { error } = await account.client.rpc("delete_my_account");
+    if (error) {
+      const text = String(error.message || "");
+      if (/uploaded images/i.test(text)) throw new Error("Some of your images couldn't be removed yet. Try again in a moment.");
+      if (error.status === 401 || /jwt|sign in/i.test(text)) throw new Error("Your sign-in expired. Sign in again to delete your account.");
+      throw new Error(failed);
+    }
+    const removed = profiles.filter((profile) => profile.member && profile.ownerId === userId);
+    for (let index = profiles.length - 1; index >= 0; index -= 1) if (removed.includes(profiles[index])) profiles.splice(index, 1);
+    await Promise.all(removed.map((profile) => mediaRequest("readwrite", (store) => store.delete(profile.id)).catch(() => {})));
+    await account.client.auth.signOut({ scope: "local" }).catch(() => {});
+    account.user = null;
+    markOwnMemberProfiles();
+    refreshAccountViews();
   }
 
   function dataUrlToBlob(dataUrl) {
