@@ -25,6 +25,7 @@ Open http://localhost:3000. The site is plain HTML, CSS, and JavaScript; it need
 - `dist/index.html` — homepage and business discovery.
 - `dist/expos.html` — interactive expo preview.
 - `dist/company.html` — company profile preview.
+- `dist/dashboard.html` — member dashboard (connections, messages, opportunities, events), built from what the visitor saved in this browser; styles in `dist/dashboard.css`.
 - `dist/app.js` — shared interactions, demo profiles, filters, and browser-local behavior.
 - `dist/*.css` — styles; `dist/homepage.css` holds the homepage discovery section (search, industry strip, featured businesses, next-expo preview); `dist/expo-floor.css` holds the Live Expos booth floor; `dist/spotlight.css` holds the Spotlight premiere timeline and Live Q&A panel; `dist/matches.css` holds business matchmaking (homepage try-it, suggested matches on profiles, post-signup matches); `dist/profiles.css` holds the company profile page, including the contact bar, section navigation, intro video, certifications, and projects. `dist/board.css` holds the Opportunity Board (posting, responses, companies that could fit) and the Company Activity feed (updates, follow, start a conversation).
 - `dist/assets/` — BOND logos and photography, including the `industry-*.jpg` tiles and the `project-*.jpg` sample portfolio photos.

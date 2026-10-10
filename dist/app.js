@@ -11,6 +11,7 @@
   const RESPONSES_KEY = "bond.demo.responses";
   const FOLLOWS_KEY = "bond.demo.follows";
   const POSTS_KEY = "bond.demo.posts";
+  const VIEWED_KEY = "bond.demo.viewed";
   const DAY_MS = 24 * 60 * 60 * 1000;
   const MAX_UPLOAD_BYTES = 1024 * 1024;
   const MAX_IMAGE_DATA_URL_LENGTH = 1.5 * 1024 * 1024;
@@ -261,6 +262,7 @@
   const responsesByOpportunity = readResponses();
   const followedCompanies = new Set(readStoredIds(FOLLOWS_KEY));
   const postedUpdates = readPostedUpdates();
+  const recentlyViewed = readStoredIds(VIEWED_KEY).slice(0, 8);
   let currentFilter = "All";
   let currentOpportunityFilter = "All";
   let currentFeedFilter = "All";
@@ -1300,6 +1302,7 @@
       return;
     }
     document.title = `${profile.name} — BOND company preview`;
+    recordView(profile);
     const cover = element("div", "company-cover");
     const coverImage = element("img", "");
     const coverNote = element("p", "company-cover-note", profile.cover ? "Uploaded cover · Local preview" : "Concept cover · Design preview");
@@ -1540,7 +1543,17 @@
     showDialog(dialog, opener);
   }
 
+  function recordView(profile) {
+    if (profile.local) return;
+    const index = recentlyViewed.indexOf(profile.id);
+    if (index !== -1) recentlyViewed.splice(index, 1);
+    recentlyViewed.unshift(profile.id);
+    recentlyViewed.length = Math.min(recentlyViewed.length, 8);
+    writeStoredValue(VIEWED_KEY, recentlyViewed);
+  }
+
   function openCompany(profile, opener) {
+    recordView(profile);
     const dialog = document.getElementById("company-dialog");
     renderCompanyDetails(profile, document.getElementById("company-dialog-body"), { inDialog: true });
     showDialog(dialog, opener);
@@ -3077,6 +3090,227 @@
     textarea.focus();
   }
 
+  function dashboardSection(container, id, title, copy) {
+    const block = element("section", "dashboard-section");
+    block.id = id;
+    const heading = element("h2", "", title);
+    heading.id = `${id}-heading`;
+    block.setAttribute("aria-labelledby", heading.id);
+    block.append(heading);
+    if (copy) block.append(element("p", "dialog-copy", copy));
+    container.append(block);
+    return block;
+  }
+
+  function dashboardButton(text, className, key, onClick, label) {
+    const button = element("button", className, text);
+    button.type = "button";
+    if (label) button.setAttribute("aria-label", label);
+    button.dataset.dashKey = key;
+    button.addEventListener("click", () => onClick(button));
+    return button;
+  }
+
+  function dashboardEmpty(block, text, action) {
+    const empty = element("div", "dashboard-empty");
+    empty.append(element("p", "", text));
+    if (action) empty.append(action);
+    block.append(empty);
+  }
+
+  function dashboardLink(text, href, className = "company-link") {
+    const link = element("a", className, text);
+    link.href = href;
+    return link;
+  }
+
+  function dashboardCompanyRow(profile, detail, { tags = [], snippet = "" } = {}) {
+    const row = element("li", "dashboard-row");
+    const avatar = element("div", "company-avatar");
+    avatar.classList.toggle("has-uploaded-logo", Boolean(profile.logo));
+    avatar.append(companyLogo(profile));
+    const main = element("div", "dashboard-row-main");
+    const name = dashboardButton(profile.name, "feed-company", `name-${detail}-${profile.id}`, (button) => openCompany(profile, button));
+    main.append(name, element("span", "feed-meta", detail));
+    if (snippet) main.append(element("p", "dashboard-snippet", snippet));
+    if (tags.length) {
+      const list = element("span", "dashboard-tags");
+      tags.forEach((tag) => list.append(element("span", "dashboard-tag", tag)));
+      main.append(list);
+    }
+    const actions = element("div", "dashboard-row-actions");
+    row.append(avatar, main, actions);
+    return { row, actions };
+  }
+
+  function dashboardItemRow(title, detail, action) {
+    const row = element("li", "dashboard-row dashboard-row-plain");
+    const main = element("div", "dashboard-row-main");
+    main.append(element("strong", "dashboard-item-title", title), element("span", "feed-meta", detail));
+    const actions = element("div", "dashboard-row-actions");
+    if (action) actions.append(action);
+    row.append(main, actions);
+    return row;
+  }
+
+  function renderDashboard() {
+    const container = document.getElementById("member-dashboard");
+    if (!container) return;
+    const activeKey = document.activeElement?.dataset?.dashKey;
+    container.replaceChildren();
+    const own = profiles.filter((profile) => profile.local);
+    const conversations = profiles
+      .map((profile) => ({ profile, messages: messagesByCompany[profile.id] || [] }))
+      .filter((entry) => entry.messages.length)
+      .sort((a, b) => Date.parse(b.messages.at(-1).at) - Date.parse(a.messages.at(-1).at));
+    const meetings = Object.entries(meetingRequests)
+      .map(([id, at]) => ({ profile: resolveProfile(id), at }))
+      .filter((entry) => entry.profile)
+      .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+    const responded = allOpportunities().filter((opportunity) => !opportunity.local && (responsesByOpportunity[opportunity.id] || []).length);
+    const responsesSent = responded.reduce((total, opportunity) => total + responsesByOpportunity[opportunity.id].length, 0);
+
+    const head = element("header", "dashboard-head");
+    head.append(element("p", "dialog-kicker", "Your BOND"), element("h1", "", "Your dashboard"));
+    head.append(element("p", "dialog-copy", "Your companies, connections, messages, opportunities, and upcoming events in one place. Everything here is saved in this browser; accounts that sync across devices come with BOND's launch."));
+    const stats = element("ul", "dashboard-stats");
+    stats.setAttribute("aria-label", "Summary");
+    for (const [count, label, anchor] of [
+      [own.length, own.length === 1 ? "Your company" : "Your companies", "companies"],
+      [savedCompanies.size, "Saved companies", "connections"],
+      [followedCompanies.size, "Following", "connections"],
+      [conversations.length, conversations.length === 1 ? "Conversation" : "Conversations", "messages"],
+      [postedOpportunities.length, "Opportunities posted", "opportunities"],
+      [responsesSent, responsesSent === 1 ? "Response sent" : "Responses sent", "opportunities"],
+      [meetings.length, "Meetings requested", "events"],
+    ]) {
+      const item = element("li");
+      const link = dashboardLink("", `#${anchor}`, "dashboard-stat");
+      link.append(element("strong", "", String(count)), element("span", "", label));
+      item.append(link);
+      stats.append(item);
+    }
+    container.append(head, stats);
+
+    const companies = dashboardSection(container, "companies", "Your companies");
+    if (own.length) {
+      const list = element("ul", "dashboard-list");
+      for (const profile of own) {
+        const { row, actions } = dashboardCompanyRow(profile, `${profile.category} · ${profile.location}`);
+        actions.append(
+          dashboardLink("Open profile", `company.html?id=${encodeURIComponent(profile.id)}`, "button button-secondary"),
+          dashboardButton("Post an opportunity", "button button-secondary", `post-${profile.id}`, (button) => openPostOpportunity(button, profile.id)),
+          dashboardButton("Share an update", "button button-secondary", `share-${profile.id}`, (button) => openShareUpdate(button, profile.id)),
+        );
+        list.append(row);
+      }
+      companies.append(list);
+    } else {
+      dashboardEmpty(companies, "You haven't made a company profile in this browser yet.",
+        dashboardButton("Create your company profile", "button button-primary", "create-profile", (button) => openJoin(button)));
+    }
+    companies.append(element("p", "form-hint", "Profile views from other members will appear here once BOND launches accounts. This preview can't count visits from other people's browsers."));
+
+    const connections = dashboardSection(container, "connections", "Connections", "Companies you saved, follow, or asked to be introduced to.");
+    const connectionIds = [...new Set([...savedCompanies, ...followedCompanies, ...introRequests])];
+    if (connectionIds.length) {
+      const list = element("ul", "dashboard-list");
+      for (const id of connectionIds) {
+        const profile = resolveProfile(id);
+        if (!profile) continue;
+        const tags = [];
+        if (savedCompanies.has(id)) tags.push("Saved");
+        if (followedCompanies.has(id)) tags.push("Following");
+        if (introRequests.has(id)) tags.push("Introduction requested");
+        const { row, actions } = dashboardCompanyRow(profile, `${profile.category} · ${profile.location}`, { tags });
+        actions.append(dashboardButton("Message", "button button-secondary", `message-${id}`, (button) => openConversation(profile, button), `Message ${profile.name}`));
+        list.append(row);
+      }
+      connections.append(list);
+    } else {
+      dashboardEmpty(connections, "Save or follow a company, or request an introduction, and it shows up here.", dashboardLink("Explore businesses", "index.html#businesses"));
+    }
+
+    const messages = dashboardSection(container, "messages", "Messages", "Your demo conversations. They stay in this browser until BOND launches messaging.");
+    if (conversations.length) {
+      const list = element("ul", "dashboard-list");
+      for (const { profile, messages: thread } of conversations) {
+        const last = thread.at(-1);
+        const snippet = last.text.length > 110 ? `${last.text.slice(0, 110).trim()}…` : last.text;
+        const { row, actions } = dashboardCompanyRow(profile, `${thread.length} ${thread.length === 1 ? "message" : "messages"} · last ${shortDate(last.at)}`, { snippet: `You: ${snippet}` });
+        actions.append(dashboardButton("Open conversation", "button button-secondary", `conversation-${profile.id}`, (button) => openConversation(profile, button)));
+        list.append(row);
+      }
+      messages.append(list);
+    } else {
+      dashboardEmpty(messages, "No conversations yet. Use Message company on any profile, or Start a conversation on a company update.", dashboardLink("Explore businesses", "index.html#businesses"));
+    }
+
+    const opportunities = dashboardSection(container, "opportunities", "Opportunities");
+    opportunities.append(element("h3", "detail-label", "Posted by you"));
+    if (postedOpportunities.length) {
+      const list = element("ul", "dashboard-list");
+      for (const opportunity of postedOpportunities) {
+        const poster = resolveProfile(opportunity.companyId);
+        const count = (responsesByOpportunity[opportunity.id] || []).length;
+        list.append(dashboardItemRow(opportunity.title,
+          `${poster ? poster.name : ""} · ${opportunityTypes[opportunity.type]} · posted ${shortDate(opportunity.at)} · ${count} ${count === 1 ? "response" : "responses"}`,
+          dashboardButton("View", "button button-secondary", `opportunity-${opportunity.id}`, (button) => openOpportunity(opportunity, button), `View ${opportunity.title}`)));
+      }
+      opportunities.append(list);
+    } else {
+      dashboardEmpty(opportunities, "You haven't posted a request yet.",
+        dashboardButton("Post an opportunity", "button button-primary", "post-any", (button) => openPostOpportunity(button, own[0]?.id || "")));
+    }
+    opportunities.append(element("h3", "detail-label", "You responded to"));
+    if (responded.length) {
+      const list = element("ul", "dashboard-list");
+      for (const opportunity of responded) {
+        const poster = resolveProfile(opportunity.companyId);
+        const last = responsesByOpportunity[opportunity.id].at(-1);
+        list.append(dashboardItemRow(opportunity.title,
+          `${poster ? poster.name : ""} · you responded ${shortDate(last.at)}`,
+          dashboardButton("View", "button button-secondary", `responded-${opportunity.id}`, (button) => openOpportunity(opportunity, button), `View ${opportunity.title}`)));
+      }
+      opportunities.append(list);
+    } else {
+      dashboardEmpty(opportunities, "Respond to a request on the Opportunity Board to keep track of it here.", dashboardLink("Open the Opportunity Board", "index.html#opportunities"));
+    }
+
+    const events = dashboardSection(container, "events", "Upcoming events");
+    const eventList = element("ul", "dashboard-list");
+    eventList.append(dashboardItemRow("Nova Logistics Spotlight premiere, then live Q&A", "Live expos · Main stage · Sample event",
+      dashboardLink("Go to the expo", "expos.html", "button button-secondary")));
+    for (const meeting of meetings) {
+      eventList.append(dashboardItemRow(`Meeting request: ${meeting.profile.name}`, `Requested ${shortDate(meeting.at)} · scheduling opens when BOND launches`,
+        dashboardButton("Message", "button button-secondary", `meeting-${meeting.profile.id}`, (button) => openConversation(meeting.profile, button))));
+    }
+    const followedEvents = allPosts().filter((post) => post.type === "event" && followedCompanies.has(post.companyId));
+    for (const post of followedEvents) {
+      const profile = resolveProfile(post.companyId);
+      if (!profile) continue;
+      eventList.append(dashboardItemRow(`${profile.name}: ${post.text}`, `Upcoming event · shared ${timeAgo(post.at).toLocaleLowerCase()}`,
+        dashboardButton("View company", "button button-secondary", `event-${post.id}`, (button) => openCompany(profile, button))));
+    }
+    events.append(eventList);
+    if (!followedEvents.length) events.append(element("p", "form-hint", "Follow companies to see the events they announce here."));
+
+    if (recentlyViewed.length) {
+      const viewed = dashboardSection(container, "viewed", "Recently viewed companies");
+      const list = element("ul", "dashboard-list dashboard-list-compact");
+      for (const id of recentlyViewed) {
+        const profile = resolveProfile(id);
+        if (profile) list.append(dashboardCompanyRow(profile, profile.category).row);
+      }
+      viewed.append(list);
+    }
+
+    if (activeKey) {
+      const match = [...container.querySelectorAll("[data-dash-key]")].find((node) => node.dataset.dashKey === activeKey);
+      match?.focus();
+    }
+  }
+
   function showReplay(profile, opener) {
     const dialog = document.getElementById("company-dialog");
     const body = document.getElementById("company-dialog-body");
@@ -3611,6 +3845,10 @@
     renderOpportunities();
     renderFeed();
     renderFullCompanyProfile();
+    if (document.getElementById("member-dashboard")) {
+      renderDashboard();
+      ["company-dialog", "join-dialog"].forEach((id) => document.getElementById(id)?.addEventListener("close", renderDashboard));
+    }
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", setup, { once: true });

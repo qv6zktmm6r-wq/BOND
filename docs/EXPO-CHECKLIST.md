@@ -88,11 +88,14 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 
 ## Member Dashboard (medium priority)
 
-- [ ] Connections and saved companies
-- [ ] Messages
-- [ ] Company profile views
-- [ ] Opportunities (posted and responded)
-- [ ] Upcoming events
+Dashboard page (`dashboard.html`, "Dashboard" in the main menu), with a summary row of counts:
+
+- [x] Connections and saved companies (saved, following, and introduction requests, with a Message button)
+- [x] Messages (every demo conversation with its last message; reopen it)
+- [~] Company profile views: the dashboard explains that views from other members need accounts, and shows companies you viewed recently
+- [x] Opportunities (posted, with response counts, and the ones you responded to)
+- [x] Upcoming events (next expo, your meeting requests, and events announced by companies you follow)
+- [x] Your companies, with Open profile, Post an opportunity, and Share an update
 
 ## Flagship: AI Opportunity Rooms
 
@@ -120,6 +123,6 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 ## Launch
 
 - [x] Hosting moved to Vercel; joinbond.world and www attached to the project
-- [!] Namecheap DNS: A records for `@` and `www` pointing to 76.76.21.21, and the parking records removed
+- [x] Namecheap DNS: A records for `@` and `www` point to 76.76.21.21; parking records removed (October 10, 2026; joinbond.world serves the site)
 - [x] Production deploy of `feature/homepage-refresh` (main fast-forwarded and deployed October 9, 2026; attached to joinbond.world and www, waiting on DNS)
 - [!] Unpublish the old ChatGPT Site

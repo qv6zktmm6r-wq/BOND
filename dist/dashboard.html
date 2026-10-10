@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#060D1B">
-  <title>Company Profile — BOND</title>
+  <title>Your dashboard — BOND</title>
   <meta name="description" content="Discover BOND, a business-first network for company profiles, live expos, and lasting connections. Explore the design preview.">
   <meta property="og:title" content="BOND — Where businesses connect.">
   <meta property="og:description" content="A permanent home for business connections and live discovery.">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://joinbond.world/company.html">
+  <meta property="og:url" content="https://joinbond.world/dashboard.html">
   <meta property="og:image" content="https://joinbond.world/assets/globe-hero.png">
   <link rel="icon" href="assets/bond-symbol.png" type="image/png">
   <link rel="preload" href="assets/globe-hero.png" as="image">
@@ -18,9 +18,10 @@
   <link rel="stylesheet" href="profiles.css">
   <link rel="stylesheet" href="matches.css">
   <link rel="stylesheet" href="board.css">
+  <link rel="stylesheet" href="dashboard.css">
   <script src="app.js" defer></script>
 </head>
-<body class="company-profile-page">
+<body class="company-profile-page dashboard-page">
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <div class="container header-inner">
@@ -31,12 +32,12 @@
         <a href="expos.html">Live expos</a>
         <a href="index.html#opportunities">Opportunities</a>
         <a href="index.html#about">About BOND</a>
-        <a href="dashboard.html">Dashboard</a>
+        <a href="dashboard.html" aria-current="page">Dashboard</a>
         <button class="button button-primary button-small" data-open-join>Join BOND <span aria-hidden="true">↗</span></button>
       </nav>
     </div>
   </header>
-  <main id="main" class="profile-page-main"><div class="container"><nav class="profile-breadcrumb" aria-label="Breadcrumb"><a href="index.html">BOND</a><span aria-hidden="true">/</span><a href="index.html#businesses">Company profiles</a></nav><div id="full-company-profile" aria-live="polite"></div><noscript><p>Enable JavaScript to explore the company profile preview.</p></noscript></div></main>
+  <main id="main" class="profile-page-main dashboard-main"><div class="container"><nav class="profile-breadcrumb" aria-label="Breadcrumb"><a href="index.html">BOND</a><span aria-hidden="true">/</span><span>Your dashboard</span></nav><div id="member-dashboard"></div><noscript><p>Enable JavaScript to see your dashboard.</p></noscript></div></main>
   <footer class="site-footer"><div class="container footer-main"><a class="brand" href="index.html" aria-label="BOND home"><img src="assets/bond-wordmark.png" alt="BOND" width="2036" height="772" loading="lazy"></a><p>Business Opportunity Network &amp; Discovery</p><span class="footer-domain">JoinBOND.world</span></div><div class="container footer-bottom"><p>Relationships. Trust. Lasting connections.</p><p>BOND · Design preview</p><a href="index.html">Back to top ↑</a></div></footer>
 
   <dialog id="company-dialog" class="bond-dialog" aria-label="Sample company profile"><button class="dialog-close" data-close-dialog aria-label="Close company profile">×</button><div id="company-dialog-body"></div></dialog>
