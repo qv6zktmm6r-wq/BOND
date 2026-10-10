@@ -151,6 +151,7 @@ begin
   insert into rls_results values ('owner can delete', affected = 1);
 
   -- Deleting an account.
+  insert into rls_results values ('visitors have no permission to run account deletion', not has_function_privilege('anon', 'public.delete_my_account()', 'execute'));
   perform set_config('role', 'anon', true);
   perform set_config('request.jwt.claims', '{"role":"anon"}', true);
   begin
@@ -170,6 +171,24 @@ begin
   end;
 
   perform set_config('request.jwt.claims', json_build_object('sub', user_a, 'role', 'authenticated')::text, true);
+  begin
+    perform public.delete_my_account();
+    insert into rls_results values ('account deletion needs a sign-in time', false);
+  exception when invalid_authorization_specification then
+    insert into rls_results values ('account deletion needs a sign-in time', true);
+  end;
+
+  perform set_config('request.jwt.claims', json_build_object('sub', user_a, 'role', 'authenticated',
+    'amr', json_build_array(json_build_object('method', 'otp', 'timestamp', extract(epoch from now())::bigint - 3600)))::text, true);
+  begin
+    perform public.delete_my_account();
+    insert into rls_results values ('account deletion needs a sign-in from the last 30 minutes', false);
+  exception when invalid_authorization_specification then
+    insert into rls_results values ('account deletion needs a sign-in from the last 30 minutes', true);
+  end;
+
+  perform set_config('request.jwt.claims', json_build_object('sub', user_a, 'role', 'authenticated',
+    'amr', json_build_array(json_build_object('method', 'otp', 'timestamp', extract(epoch from now())::bigint - 60)))::text, true);
   insert into public.company_profiles (name, industry, description) values ('A Again', 'Energy', 'Member A company');
   begin
     perform public.delete_my_account();

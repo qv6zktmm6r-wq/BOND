@@ -5550,7 +5550,51 @@
     input.focus();
   }
 
-  function openDeleteAccount(opener) {
+  async function signedInRecently() {
+    const { data } = await account.client.auth.getSession();
+    try {
+      const part = (data?.session?.access_token || "").split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      const claims = JSON.parse(window.atob(part.padEnd(Math.ceil(part.length / 4) * 4, "=")));
+      const times = (Array.isArray(claims.amr) ? claims.amr : []).map((entry) => Number(entry?.timestamp)).filter(Number.isFinite);
+      // The database allows 30 minutes; one minute of slack leaves time to confirm.
+      return times.length > 0 && Date.now() / 1000 - Math.max(...times) < 29 * 60;
+    } catch {
+      return false;
+    }
+  }
+
+  function openRecentSignIn(opener) {
+    const view = prepareDialog("Your BOND account", "Sign in again to delete your account");
+    if (!view) return;
+    const { dialog, body } = view;
+    body.append(element("p", "dialog-copy", "For your security, deleting your account needs a sign-in from the last 30 minutes. Sign out, request a new sign-in link, open it, then come back here to delete your account."));
+    const actions = element("div", "account-actions");
+    const again = element("button", "button button-primary", "Sign out and get a new link");
+    again.type = "button";
+    again.addEventListener("click", async () => {
+      again.disabled = true;
+      const { error } = await account.client.auth.signOut();
+      if (error) {
+        again.disabled = false;
+        announce("You couldn't be signed out. Check your connection and try again.");
+        return;
+      }
+      openAccount(opener);
+    });
+    const keep = element("button", "button button-outline", "Keep my account");
+    keep.type = "button";
+    keep.addEventListener("click", () => openAccount(opener));
+    actions.append(again, keep);
+    body.append(actions);
+    showDialog(dialog, opener);
+    again.focus();
+  }
+
+  async function openDeleteAccount(opener) {
+    if (account.client && account.user && !(await signedInRecently())) {
+      openRecentSignIn(opener);
+      return;
+    }
     const view = prepareDialog("Your BOND account", "Delete your account?");
     if (!view) return;
     const { dialog, body } = view;
@@ -5598,9 +5642,13 @@
       try {
         await deleteAccount();
       } catch (error) {
+        if (error.stale) {
+          openRecentSignIn(opener);
+          return;
+        }
         submit.disabled = false;
         keep.disabled = false;
-        status.textContent = error.message || "Your account couldn't be deleted. Check your connection and try again.";
+        status.textContent = error.shown ? error.message : "Your account couldn't be deleted. Check your connection and try again.";
         return;
       }
       dialog.close();
@@ -5612,12 +5660,14 @@
   }
 
   async function deleteAccount() {
-    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again to delete your account.");
+    const fail = (message, extra) => Object.assign(new Error(message), { shown: true }, extra);
+    if (!account.client || !account.user) throw fail("Your sign-in expired. Sign in again to delete your account.");
+    if (!(await signedInRecently())) throw fail("Sign in again to delete your account.", { stale: true });
     const failed = "Your account couldn't be deleted. Check your connection and try again.";
     const userId = account.user.id;
     const bucket = account.client.storage.from(MEDIA_BUCKET);
     const { data: folders, error: listError } = await bucket.list(userId, { limit: 100 });
-    if (listError) throw new Error(failed);
+    if (listError) throw fail(failed);
     const paths = [];
     for (const entry of folders || []) {
       if (entry.id) {
@@ -5625,19 +5675,20 @@
         continue;
       }
       const { data: files, error } = await bucket.list(`${userId}/${entry.name}`, { limit: 100 });
-      if (error) throw new Error(failed);
+      if (error) throw fail(failed);
       for (const file of files || []) if (file.id) paths.push(`${userId}/${entry.name}/${file.name}`);
     }
     if (paths.length) {
       const { error } = await bucket.remove(paths);
-      if (error) throw new Error(failed);
+      if (error) throw fail(failed);
     }
     const { error } = await account.client.rpc("delete_my_account");
     if (error) {
-      const text = String(error.message || "");
-      if (/uploaded images/i.test(text)) throw new Error("Some of your images couldn't be removed yet. Try again in a moment.");
-      if (error.status === 401 || /jwt|sign in/i.test(text)) throw new Error("Your sign-in expired. Sign in again to delete your account.");
-      throw new Error(failed);
+      if (error.code === "28000") throw fail("Sign in again to delete your account.", { stale: true });
+      const partly = paths.length ? "Your logos and cover images were removed, but your account and profiles weren't deleted. " : "";
+      if (error.code === "55000") throw fail(`${partly}Some images were still being saved. Try again in a moment.`);
+      if (error.code === "42501" || error.status === 401) throw fail(`${partly}Your sign-in expired. Sign in again, then delete your account.`);
+      throw fail(`${partly || "Your account couldn't be deleted. "}Check your connection and try again.`);
     }
     const removed = profiles.filter((profile) => profile.member && profile.ownerId === userId);
     for (let index = profiles.length - 1; index >= 0; index -= 1) if (removed.includes(profiles[index])) profiles.splice(index, 1);
