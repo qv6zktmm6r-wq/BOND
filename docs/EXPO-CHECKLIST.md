@@ -114,12 +114,17 @@ Companies host their own demos, workshops, open houses, and Q&As. Free reach onl
 
 ## Flagship: AI Opportunity Rooms
 
-- [ ] Describe a project in plain language ("I need to build a fleet management platform…")
-- [ ] Find companies matching the requirements
-- [ ] Show qualifications, capabilities, and verification status
-- [ ] Suggest complementary partners to form a project team
-- [ ] Open a private Opportunity Room for introductions, chat, video meetings, and proposals
-- [ ] Invite a company into a room straight from its Spotlight or profile
+Working in the preview: rooms are saved in the visitor's browser, the project reader matches keywords (no paid AI yet), and nothing is sent to companies.
+
+- [x] Describe a project in plain language ("I need to build a fleet management platform…"), typed or spoken, with three examples on the homepage
+- [x] Find companies matching the requirements: BOND reads which kinds of help the project needs (software, logistics, construction, engineering, manufacturing, energy, aerospace, program management), and the visitor can change them
+- [x] Show qualifications, capabilities, and verification status (capabilities, certifications, business community, and "Not verified" until BOND verifies)
+- [x] Suggest complementary partners to form a project team: one company per need, a suggested lead, optional extras, and a prompt to post on the Opportunity Board when no company covers a need
+- [x] Open a private Opportunity Room (`room.html`): project and need coverage, conversation, team, proposals (shortlist, decline), meetings (https meeting link, add to calendar), and close the room; rooms are listed on the homepage and the dashboard
+- [x] Invite a company into a room straight from its Spotlight or profile ("Invite to a room" on the profile dialog, full profile, and expo side panel)
+- [ ] Real AI project reading and partner reasoning (needs the AI provider below)
+- [ ] Invitations and messages reaching the companies, and rooms shared between members (needs accounts and a database)
+- [~] Video meetings: the room stores a meeting link the host pastes (Zoom, Teams, Meet); built-in video needs the video provider
 
 ## Guiding principles
 

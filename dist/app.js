@@ -14,6 +14,13 @@
   const VIEWED_KEY = "bond.demo.viewed";
   const EVENTS_KEY = "bond.demo.events";
   const RSVPS_KEY = "bond.demo.rsvps";
+  const ROOMS_KEY = "bond.demo.rooms";
+  const MAX_ROOMS = 12;
+  const MAX_ROOM_MEMBERS = 8;
+  const MAX_ROOM_MESSAGES = 120;
+  const MAX_ROOM_PROPOSALS = 20;
+  const MAX_ROOM_MEETINGS = 20;
+  const MAX_ROOMS_STORAGE_LENGTH = 480000;
   const DAY_MS = 24 * 60 * 60 * 1000;
   const MAX_UPLOAD_BYTES = 1024 * 1024;
   const MAX_IMAGE_DATA_URL_LENGTH = 1.5 * 1024 * 1024;
@@ -258,6 +265,18 @@
   const matchTypes = { Customer: "Potential customer", Partner: "Partner", Supplier: "Supplier", Teaming: "Teaming partner" };
   const matchWeights = { Customer: 3, Partner: 3, Supplier: 2, Teaming: 2 };
   const matchStopwords = new Set(["sample", "company", "companies", "business", "businesses", "service", "services", "support", "focused", "introducing", "capabilities", "capability", "across", "their", "with", "that", "this", "from", "into", "offering", "connecting", "presenting", "showing", "bringing", "everyday", "ideas", "network", "teams", "team", "work", "help", "helping", "movement", "goods", "general", "project"]);
+  const projectNeeds = [
+    { id: "software", label: "Software and apps", category: "Technology", words: ["software", "platform", "app", "apps", "application", "dashboard", "dashboards", "portal", "website", "web", "mobile", "saas", "api", "data", "analytics", "tracking", "automation", "digital", "reporting", "cloud", "ai", "integration", "workflow"] },
+    { id: "logistics", label: "Fleet, shipping, and logistics", category: "Logistics", words: ["fleet", "fleets", "logistics", "shipping", "delivery", "deliveries", "distribution", "freight", "warehousing", "dispatch", "routing", "route", "routes", "transport", "transportation", "trucking", "truck", "trucks", "vehicles", "supply chain"] },
+    { id: "construction", label: "Construction and site work", category: "Construction", words: ["construction", "construct", "building", "buildings", "facility", "facilities", "renovation", "renovate", "remodel", "job site", "contractor", "hangar", "concrete", "tenant improvement", "expansion", "site work"] },
+    { id: "engineering", label: "Engineering and design", category: "Engineering", words: ["engineering", "engineer", "engineers", "design", "cad", "structural", "mechanical", "electrical", "civil", "analysis", "drawings", "specifications", "permitting", "permits"] },
+    { id: "manufacturing", label: "Manufacturing and prototyping", category: "Manufacturing", words: ["manufacturing", "manufacture", "fabrication", "fabricate", "prototype", "prototypes", "prototyping", "parts", "machining", "production", "cnc", "assembly", "hardware", "sensor", "sensors", "device", "devices", "enclosure", "enclosures"] },
+    { id: "energy", label: "Energy and power", category: "Energy", words: ["solar", "energy", "power", "battery", "batteries", "charging", "chargers", "ev", "electric vehicle", "electric vehicles", "renewable", "efficiency", "microgrid", "grid"] },
+    { id: "aerospace", label: "Aerospace and defense", category: "Aerospace & Defense", words: ["aerospace", "aircraft", "aviation", "drone", "drones", "uav", "satellite", "satellites", "defense", "military", "avionics", "spacecraft", "airport"] },
+    { id: "program", label: "Program management and advisory", category: "Professional services", words: ["program management", "project management", "change management", "strategy", "consulting", "consultant", "compliance", "process improvement", "training", "rollout", "budget", "procurement", "grant", "grants"] },
+  ];
+  const briefStopwords = new Set(["need", "want", "planning", "plan", "looking", "about", "would", "like", "build", "make", "some", "also", "they", "them", "what", "where", "which", "while", "have", "will", "more", "than", "very", "just", "around", "each", "unit", "lightweight", "foot", "square"]);
+  const meetingDurations = [30, 45, 60, 90];
 
   const iconPaths = {
     Logistics: ["M4 21V5h11v16", "M15 10h5v11", "M8 9h3M8 13h3M8 17h3M18 14v1M18 18v1M2 21h20"],
@@ -281,6 +300,7 @@
   const followedCompanies = new Set(readStoredIds(FOLLOWS_KEY));
   const hostedEvents = readHostedEvents();
   const eventRsvps = readRsvps();
+  const opportunityRooms = readRooms();
   const postedUpdates = readPostedUpdates();
   const recentlyViewed = readStoredIds(VIEWED_KEY).slice(0, 8);
   let currentFilter = "All";
@@ -762,6 +782,69 @@
     return writeStoredValue(RSVPS_KEY, eventRsvps);
   }
 
+  function readRooms() {
+    const stored = readStoredValue(ROOMS_KEY);
+    if (!Array.isArray(stored)) return [];
+    const statuses = ["new", "shortlisted", "declined"];
+    return stored.slice(0, MAX_ROOMS).flatMap((item) => {
+      if (!item || typeof item !== "object" || typeof item.id !== "string" || !/^room-[a-z0-9-]{1,60}$/.test(item.id)) return [];
+      const title = cleanText(item.title, 80);
+      const at = storedTime(item.at);
+      if (!title || !at) return [];
+      const owner = knownProfileId(item.owner) ? item.owner : "";
+      const list = (value) => (Array.isArray(value) ? value : []);
+      const needIds = (value) => [...new Set(list(value).filter((id) => needById(id)))];
+      const seen = new Set([owner]);
+      const members = list(item.members).flatMap((member) => {
+        if (!member || !knownProfileId(member.companyId) || seen.has(member.companyId)) return [];
+        seen.add(member.companyId);
+        return [{ companyId: member.companyId, needs: needIds(member.needs), at: storedTime(member.at) || at }];
+      }).slice(0, MAX_ROOM_MEMBERS);
+      const messages = list(item.messages).flatMap((message) => {
+        const text = cleanMessage(message?.text).slice(0, 1000);
+        const time = storedTime(message?.at);
+        if (!text || !time) return [];
+        return [{ from: knownProfileId(message.from) ? message.from : "", text, at: time, note: message.note === true }];
+      }).slice(-MAX_ROOM_MESSAGES);
+      const meetings = list(item.meetings).flatMap((meeting) => {
+        const start = storedTime(meeting?.start);
+        const topic = cleanText(meeting?.topic, 100);
+        const link = normalizeEventLink(meeting?.link);
+        if (typeof meeting?.id !== "string" || !/^meet-[a-z0-9-]{1,60}$/.test(meeting.id) || !start || !topic
+          || !meetingDurations.includes(meeting.duration) || link === null) return [];
+        return [{ id: meeting.id, topic, start, duration: meeting.duration, link, at: storedTime(meeting.at) || at }];
+      }).slice(0, MAX_ROOM_MEETINGS);
+      const proposals = list(item.proposals).flatMap((proposal) => {
+        const proposalTitle = cleanText(proposal?.title, 100);
+        const summary = cleanMessage(proposal?.summary).slice(0, 800);
+        const time = storedTime(proposal?.at);
+        if (typeof proposal?.id !== "string" || !/^prop-[a-z0-9-]{1,60}$/.test(proposal.id) || !knownProfileId(proposal.from)
+          || !proposalTitle || !summary || !time) return [];
+        return [{
+          id: proposal.id, from: proposal.from, title: proposalTitle, summary, at: time,
+          price: cleanText(proposal.price, 40), timeline: cleanText(proposal.timeline, 60),
+          status: statuses.includes(proposal.status) ? proposal.status : "new",
+        }];
+      }).slice(0, MAX_ROOM_PROPOSALS);
+      return [{
+        id: item.id, title, brief: cleanMessage(item.brief).slice(0, 1500), needs: needIds(item.needs),
+        city: cleanText(item.city, 80), preference: ownershipOptions.includes(item.preference) ? item.preference : "",
+        owner, at, updated: storedTime(item.updated) || at, members, messages, meetings, proposals,
+      }];
+    });
+  }
+
+  function saveRooms() {
+    try {
+      const json = JSON.stringify(opportunityRooms);
+      if (json.length > MAX_ROOMS_STORAGE_LENGTH) return false;
+      localStorage.setItem(ROOMS_KEY, json);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function eventEnd(event) {
     return Date.parse(event.start) + event.duration * 60 * 1000;
   }
@@ -791,19 +874,26 @@
 
   function downloadEventCalendar(event) {
     const profile = resolveProfile(event.companyId);
+    downloadCalendar({
+      uid: event.id, title: event.title, start: event.start, end: eventEnd(event),
+      location: event.format === "online" ? "Online" : event.location,
+      details: `Hosted by ${profile ? profile.name : "a BOND company"} on BOND.\n\n${event.description}${event.link ? `\n\nJoin: ${event.link}` : ""}`,
+    });
+  }
+
+  function downloadCalendar({ uid, title, start, end, location, details }) {
     const stamp = (time) => new Date(time).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
     const escape = (value) => String(value || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
-    const details = `Hosted by ${profile ? profile.name : "a BOND company"} on BOND.\n\n${event.description}${event.link ? `\n\nJoin: ${event.link}` : ""}`;
     const lines = [
       "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//BOND//Member events//EN", "CALSCALE:GREGORIAN", "BEGIN:VEVENT",
-      `UID:${event.id}@joinbond.world`, `DTSTAMP:${stamp(Date.now())}`, `DTSTART:${stamp(event.start)}`, `DTEND:${stamp(eventEnd(event))}`,
-      `SUMMARY:${escape(event.title)}`, `LOCATION:${escape(event.format === "online" ? "Online" : event.location)}`, `DESCRIPTION:${escape(details)}`,
+      `UID:${uid}@joinbond.world`, `DTSTAMP:${stamp(Date.now())}`, `DTSTART:${stamp(start)}`, `DTEND:${stamp(end)}`,
+      `SUMMARY:${escape(title)}`, `LOCATION:${escape(location)}`, `DESCRIPTION:${escape(details)}`,
       "END:VEVENT", "END:VCALENDAR",
     ];
     const url = URL.createObjectURL(new Blob([`${lines.join("\r\n")}\r\n`], { type: "text/calendar" }));
     const link = element("a");
     link.href = url;
-    link.download = `${event.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "bond-event"}.ics`;
+    link.download = `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "bond-event"}.ics`;
     document.body.append(link);
     link.click();
     link.remove();
@@ -1220,6 +1310,13 @@
     actions.append(connect, save);
     if (!profile.local) actions.append(followButton(profile, "button button-secondary"));
     actions.append(meeting);
+    if (!profile.local) {
+      const invite = element("button", "button button-secondary company-room", "Invite to a room");
+      invite.type = "button";
+      invite.setAttribute("aria-label", `Invite ${profile.name} to an Opportunity Room`);
+      invite.addEventListener("click", () => openInviteToRoom(profile, invite));
+      actions.append(invite);
+    }
     container.append(actions, status, conversation);
   }
 
@@ -3580,6 +3677,934 @@
     title.focus();
   }
 
+  function wordText(value) {
+    return ` ${String(value || "").toLocaleLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
+  }
+
+  function needById(id) {
+    return projectNeeds.find((need) => need.id === id);
+  }
+
+  function needForCategory(category) {
+    return projectNeeds.find((need) => need.category === category);
+  }
+
+  function detectNeeds(brief) {
+    const text = wordText(brief);
+    return projectNeeds
+      .map((need, index) => ({ id: need.id, index, hits: need.words.filter((word) => text.includes(` ${word} `)).length }))
+      .filter((entry) => entry.hits)
+      .sort((a, b) => b.hits - a.hits || a.index - b.index)
+      .slice(0, 5)
+      .map((entry) => entry.id);
+  }
+
+  function joinNames(names) {
+    if (typeof Intl !== "undefined" && typeof Intl.ListFormat === "function") return new Intl.ListFormat("en", { type: "conjunction" }).format(names);
+    return names.join(", ");
+  }
+
+  function verificationLabel(profile) {
+    return profile.local ? "Self-reported · Not verified yet" : "Sample company · Not verified";
+  }
+
+  function scoreCompanyForNeed(profile, need, { briefTerms, city, preference }) {
+    const inIndustry = profile.category === need.category;
+    const text = wordText([profile.description, profile.tagline || "", ...profile.services].join(" "));
+    const hits = need.words.filter((word) => text.includes(` ${word} `)).length;
+    if (!inIndustry && !hits) return null;
+    const services = profile.services.filter((service) => need.words.some((word) => wordText(service).includes(` ${word} `)));
+    const terms = matchTerms(profile);
+    const shared = [...briefTerms].filter((term) => terms.has(term)).slice(0, 3);
+    const sameCity = Boolean(city) && cityOf(profile) === city;
+    const preferred = Boolean(preference) && profile.ownership === preference;
+    const reasons = [];
+    if (shared.length) reasons.push(`Mentions what you need: ${shared.join(", ")}`);
+    if (sameCity) reasons.push(`Based in ${profile.location.split(",")[0]}`);
+    if (preferred) reasons.push(`${profile.ownership} (self-reported)`);
+    return { score: (inIndustry ? 3 : 0) + Math.min(hits, 3) * 1.5 + shared.length + (sameCity ? 1 : 0) + (preferred ? 1 : 0), reasons, services };
+  }
+
+  function suggestTeam(brief, needIds, { city = "", preference = "", exclude = [] } = {}) {
+    const briefTerms = new Set([...matchTerms({ description: brief, services: [] })].filter((term) => !briefStopwords.has(term)));
+    const context = { briefTerms, city: city.split(",")[0].trim().toLocaleLowerCase(), preference };
+    const skip = new Set(exclude);
+    const candidates = profiles.filter((profile) => !profile.local && !skip.has(profile.id));
+    const members = new Map();
+    const extras = new Map();
+    const uncovered = [];
+    for (const id of needIds) {
+      const need = needById(id);
+      if (!need) continue;
+      const ranked = candidates.flatMap((profile) => {
+        const fit = scoreCompanyForNeed(profile, need, context);
+        return fit ? [{ profile, ...fit }] : [];
+      }).sort((a, b) => b.score - a.score || a.profile.name.localeCompare(b.profile.name));
+      if (!ranked.length) {
+        uncovered.push(need);
+        continue;
+      }
+      const [best, next] = ranked;
+      const member = members.get(best.profile.id);
+      if (member) {
+        member.needs.push(need.id);
+        member.score = Math.max(member.score, best.score);
+        best.reasons.forEach((reason) => { if (!member.reasons.includes(reason)) member.reasons.push(reason); });
+        best.services.forEach((service) => { if (!member.services.includes(service)) member.services.push(service); });
+      } else {
+        members.set(best.profile.id, { profile: best.profile, needs: [need.id], score: best.score, reasons: best.reasons, services: best.services });
+      }
+      if (next && next.score >= 3 && !extras.has(next.profile.id)) {
+        extras.set(next.profile.id, { profile: next.profile, needs: [need.id], score: next.score, reasons: [`Another option for ${need.label.toLocaleLowerCase()}`, ...next.reasons], services: next.services });
+      }
+    }
+    for (const id of members.keys()) extras.delete(id);
+    const team = [...members.values()];
+    if (team.length) {
+      const lead = team[0].profile;
+      for (const match of findMatches(lead)) {
+        if (extras.size >= 4) break;
+        if (match.type === "Customer" || match.reasons[0] === "Overlapping capabilities") continue;
+        if (match.profile.local || skip.has(match.profile.id) || members.has(match.profile.id) || extras.has(match.profile.id)) continue;
+        const reason = match.reasons[0];
+        extras.set(match.profile.id, { profile: match.profile, needs: [], score: match.score, services: [],
+          reasons: [`${matchTypes[match.type]} for ${lead.name}: ${reason.charAt(0).toLocaleLowerCase()}${reason.slice(1)}`] });
+      }
+    }
+    return { team, extras: [...extras.values()].slice(0, 4), uncovered };
+  }
+
+  function roomTitleFrom(brief) {
+    const first = cleanText(brief.split(/[.!?\n]/)[0], 200)
+      .replace(/^(?:i|we)(?:'m|'re| am| are)?\s+(?:need|want|would like|looking|planning|plan|hope)\s+(?:to\s+|for\s+)?/i, "")
+      .replace(/^(?:looking|planning|hoping)\s+(?:to|for)\s+/i, "");
+    let title = first.charAt(0).toLocaleUpperCase() + first.slice(1);
+    if (title.length > 60) {
+      const clause = [...title.matchAll(/, | that | which | so | with | for (?:our|my|the) /g)].find((match) => match.index >= 12);
+      if (clause) title = title.slice(0, clause.index);
+    }
+    if (title.length > 80) title = `${title.slice(0, 79).replace(/\s+\S*$/, "")}…`;
+    return title || "New project";
+  }
+
+  function roomHref(room) {
+    return `room.html?id=${encodeURIComponent(room.id)}`;
+  }
+
+  function roomSummary(room) {
+    const companies = room.members.length;
+    const proposals = room.proposals.length;
+    const next = room.meetings.filter(eventIsUpcoming).sort((a, b) => Date.parse(a.start) - Date.parse(b.start))[0];
+    return [
+      `${companies} ${companies === 1 ? "company" : "companies"}`,
+      proposals ? `${proposals} ${proposals === 1 ? "proposal" : "proposals"}` : "",
+      next ? `Next meeting ${eventWhen(next)}` : `Updated ${shortDate(room.updated)}`,
+    ].filter(Boolean).join(" · ");
+  }
+
+  function pushRoomMessage(room, message) {
+    room.messages.push(message);
+    if (room.messages.length > MAX_ROOM_MESSAGES) room.messages.splice(0, room.messages.length - MAX_ROOM_MESSAGES);
+    room.updated = message.at;
+  }
+
+  function createRoom({ title, brief, needs, city = "", preference = "", owner = "", members }) {
+    const at = new Date().toISOString();
+    const room = {
+      id: newId("room"), title, brief, needs: [...needs], city, preference, owner, at, updated: at,
+      members: members.map((member) => ({ companyId: member.companyId, needs: member.needs, at })), messages: [], meetings: [], proposals: [],
+    };
+    const names = room.members.map((member) => resolveProfile(member.companyId)?.name).filter(Boolean);
+    pushRoomMessage(room, { from: "", note: true, at, text: `Room opened with ${joinNames(names)}. Invitations are sent when BOND launches accounts; until then this room stays in this browser.` });
+    opportunityRooms.unshift(room);
+    if (saveRooms()) return room;
+    opportunityRooms.shift();
+    return null;
+  }
+
+  function addRoomMember(room, companyId, needIds) {
+    const profile = resolveProfile(companyId);
+    const covers = needIds || room.needs.filter((id) => needById(id).category === profile.category);
+    const at = new Date().toISOString();
+    room.members.push({ companyId: profile.id, needs: covers, at });
+    const forText = covers.length ? ` for ${joinNames(covers.map((id) => needById(id).label.toLocaleLowerCase()))}` : "";
+    pushRoomMessage(room, { from: "", note: true, at, text: `You invited ${profile.name}${forText}.` });
+    return saveRooms();
+  }
+
+  function roomCandidateCard(entry, { lead = false, extra = false } = {}) {
+    const { profile } = entry;
+    const item = element("li", "match-card room-candidate");
+    const head = element("div", "match-head");
+    const logo = element("span", "company-avatar match-logo");
+    logo.append(companyLogo(profile));
+    const name = element("div", "match-name");
+    name.append(element("strong", "", profile.name), element("span", "", profile.category));
+    head.append(logo, name);
+    const tags = element("p", "match-tags");
+    tags.append(element("span", "match-type", extra ? "Optional" : lead ? "Lead" : "Team member"));
+    if (entry.needs.length) tags.append(element("span", "match-strength", matchStrength(entry.score)));
+    item.append(head, tags);
+    if (!extra && entry.needs.length) item.append(element("p", "room-covers", `Covers ${joinNames(entry.needs.map((id) => needById(id).label.toLocaleLowerCase()))}`));
+    const reasons = element("ul", "match-reasons");
+    entry.reasons.slice(0, 3).forEach((reason) => reasons.append(element("li", "", reason)));
+    if (entry.reasons.length) item.append(reasons);
+    const facts = element("dl", "room-quals");
+    const fact = (term, value) => {
+      if (value) facts.append(element("dt", "", term), element("dd", "", value));
+    };
+    fact("Capabilities", (entry.services.length ? entry.services : profile.services).slice(0, 3).join(", "));
+    fact("Certifications", (profile.certifications || []).slice(0, 2).join(", "));
+    fact("Community", ownershipOptions.includes(profile.ownership) ? `${profile.ownership} · Self-reported` : "");
+    fact("Verified", verificationLabel(profile));
+    const pick = element("label", "room-pick");
+    const box = element("input");
+    box.type = "checkbox";
+    box.name = "room-member";
+    box.value = profile.id;
+    box.checked = !extra;
+    pick.append(box, element("span", "", `Invite ${profile.name}`));
+    const view = element("button", "company-link", "View company profile");
+    view.type = "button";
+    view.setAttribute("aria-label", `View ${profile.name} profile`);
+    view.addEventListener("click", () => openCompany(profile, view));
+    item.append(facts, pick, view);
+    return item;
+  }
+
+  function renderRoomBuilder() {
+    const form = document.getElementById("room-brief-form");
+    const results = document.getElementById("room-results");
+    renderRoomList();
+    if (!form || !results) return;
+    const brief = form.elements.namedItem("brief");
+    const status = document.getElementById("room-brief-status");
+    form.querySelector(".room-brief-actions")?.prepend(dictationButton(brief, status));
+    form.querySelectorAll("[data-room-example]").forEach((button) => {
+      button.addEventListener("click", () => {
+        brief.value = button.dataset.roomExample;
+        form.requestSubmit();
+      });
+    });
+    brief.addEventListener("input", () => { status.textContent = ""; });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const text = cleanMessage(brief.value).slice(0, 1500);
+      if (text.length < 12) {
+        status.textContent = "Describe the project in a sentence or two: what you're building, where, and the help you need.";
+        brief.focus();
+        return;
+      }
+      const data = new FormData(form);
+      const preference = cleanText(data.get("preference"), 40);
+      const state = {
+        brief: text, needs: detectNeeds(text), city: cleanText(data.get("city"), 80),
+        preference: ownershipOptions.includes(preference) ? preference : "",
+      };
+      renderRoomSuggestions(state, results);
+      results.hidden = false;
+      const heading = results.querySelector("h3");
+      heading.tabIndex = -1;
+      heading.focus();
+    });
+  }
+
+  function renderRoomSuggestions(state, results) {
+    results.replaceChildren();
+    const found = state.needs.length > 0;
+    results.append(element("h3", "matchmaker-heading", found ? "What this project needs" : "What kind of help does this project need?"));
+    results.append(element("p", "room-copy", found
+      ? "BOND picked these out of your description. Add or remove any, and the team updates."
+      : "BOND couldn't tell from the description. Pick what applies, or add more detail and search again."));
+    const picker = element("fieldset", "room-needs-picker");
+    picker.append(element("legend", "sr-only", "Project needs"));
+    for (const need of projectNeeds) {
+      const label = element("label", "room-need-chip");
+      const box = element("input");
+      box.type = "checkbox";
+      box.value = need.id;
+      box.checked = state.needs.includes(need.id);
+      box.addEventListener("change", () => {
+        state.needs = box.checked ? [...state.needs, need.id] : state.needs.filter((id) => id !== need.id);
+        drawTeam();
+      });
+      label.append(box, element("span", "", need.label));
+      picker.append(label);
+    }
+    const teamBox = element("div", "room-team-box");
+    const teamStatus = element("p", "sr-only");
+    teamStatus.setAttribute("role", "status");
+    const create = element("form", "room-form room-create");
+    const titleLabel = element("label", "", "Room name");
+    titleLabel.htmlFor = "room-title-input";
+    const title = element("input");
+    title.id = "room-title-input";
+    title.maxLength = 80;
+    title.required = true;
+    title.value = roomTitleFrom(state.brief);
+    const owner = companyPicker("room-owner", "Opening the room as", { includeNone: true, selected: profiles.find((profile) => profile.local)?.id || "" });
+    const submit = element("button", "button button-primary", "Open the Opportunity Room");
+    submit.type = "submit";
+    const createStatus = element("p", "chat-status");
+    createStatus.setAttribute("role", "status");
+    const ownerField = element("div");
+    ownerField.append(owner.label, owner.select);
+    const titleField = element("div");
+    titleField.append(titleLabel, title);
+    const row = element("div", "room-form-row");
+    row.append(titleField, ownerField);
+    create.append(element("h3", "matchmaker-heading", "Open a private room for this team"), element("p", "room-copy", "Bring the companies you picked into one place for introductions, conversation, meetings, and proposals."), row, submit, createStatus);
+    let suggestion = { team: [], extras: [], uncovered: [] };
+    const drawTeam = () => {
+      suggestion = suggestTeam(state.brief, state.needs, { city: state.city, preference: state.preference });
+      teamBox.replaceChildren();
+      if (!state.needs.length) {
+        teamBox.append(element("p", "room-copy", "Pick at least one kind of help to see companies."));
+        create.hidden = true;
+        teamStatus.textContent = "No needs picked.";
+        return;
+      }
+      teamBox.append(element("h3", "matchmaker-heading", "Suggested team"));
+      if (suggestion.team.length) {
+        const list = element("ul", "match-grid room-team");
+        suggestion.team.forEach((entry, index) => list.append(roomCandidateCard(entry, { lead: index === 0 })));
+        teamBox.append(list);
+      }
+      for (const need of suggestion.uncovered) {
+        const note = element("p", "room-uncovered");
+        note.append(`No company on BOND covers ${need.label.toLocaleLowerCase()} yet. `);
+        const post = element("button", "company-link", "Post it on the Opportunity Board");
+        post.type = "button";
+        post.addEventListener("click", () => openPostOpportunity(post));
+        note.append(post);
+        teamBox.append(note);
+      }
+      if (suggestion.extras.length) {
+        teamBox.append(element("h3", "detail-label", "Also worth inviting"));
+        const list = element("ul", "match-grid room-team");
+        suggestion.extras.forEach((entry) => list.append(roomCandidateCard(entry, { extra: true })));
+        teamBox.append(list);
+      }
+      create.hidden = !suggestion.team.length && !suggestion.extras.length;
+      teamStatus.textContent = `${suggestion.team.length} ${suggestion.team.length === 1 ? "company" : "companies"} suggested for the team.`;
+    };
+    create.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const fail = (message, input) => {
+        createStatus.textContent = message;
+        input?.focus();
+      };
+      const ownerId = knownProfileId(owner.select.value) ? owner.select.value : "";
+      const name = cleanText(title.value, 80);
+      const chosen = [...teamBox.querySelectorAll('input[name="room-member"]:checked')].map((box) => box.value).filter((id) => id !== ownerId && knownProfileId(id));
+      if (!name) return fail("Give the room a name.", title);
+      if (!chosen.length) return fail("Choose at least one company to invite.", teamBox.querySelector('input[name="room-member"]'));
+      if (chosen.length > MAX_ROOM_MEMBERS) return fail(`A room holds up to ${MAX_ROOM_MEMBERS} companies. Uncheck a few.`, teamBox.querySelector('input[name="room-member"]:checked'));
+      if (opportunityRooms.length >= MAX_ROOMS) return fail(`You have ${MAX_ROOMS} rooms already. Close one from its room page first.`, submit);
+      const entries = [...suggestion.team, ...suggestion.extras];
+      const room = createRoom({
+        title: name, brief: state.brief, needs: state.needs, city: state.city, preference: state.preference, owner: ownerId,
+        members: chosen.map((id) => ({ companyId: id, needs: entries.find((entry) => entry.profile.id === id)?.needs || [] })),
+      });
+      if (!room) return fail("This browser couldn't save the room. Its storage may be full or turned off.", submit);
+      window.location.href = roomHref(room);
+    });
+    results.append(picker, teamStatus, teamBox, create, element("p", "match-disclosure", "Project reader preview: BOND picks out needs from words in your description and matches them to company profiles, certifications, and locations. AI that reads full project descriptions is planned."));
+    drawTeam();
+  }
+
+  function renderRoomList() {
+    const box = document.getElementById("room-list");
+    if (!box) return;
+    box.replaceChildren();
+    if (!opportunityRooms.length) return;
+    box.append(element("h3", "detail-label", "Your Opportunity Rooms"));
+    const list = element("ul", "room-list");
+    for (const room of opportunityRooms) {
+      const item = element("li");
+      const link = element("a", "room-list-link");
+      link.href = roomHref(room);
+      link.append(element("strong", "", room.title), element("span", "", roomSummary(room)));
+      item.append(link);
+      list.append(item);
+    }
+    box.append(list);
+  }
+
+  function openInviteToRoom(profile, opener) {
+    const view = prepareDialog("Opportunity Rooms", `Invite ${profile.name} to a project`);
+    if (!view) return;
+    const { dialog, body } = view;
+    body.append(element("p", "dialog-copy", "An Opportunity Room is a private space for one project: introductions, conversation, meetings, and proposals with the companies you invite."));
+    let firstFocus = null;
+    if (opportunityRooms.length) {
+      body.append(element("h3", "detail-label", "Add to one of your rooms"));
+      const status = element("p", "chat-status");
+      status.setAttribute("role", "status");
+      const list = element("ul", "room-invite-list");
+      for (const room of opportunityRooms) {
+        const inRoom = room.owner === profile.id || room.members.some((member) => member.companyId === profile.id);
+        const full = room.members.length >= MAX_ROOM_MEMBERS;
+        const item = element("li");
+        const copy = element("div");
+        copy.append(element("strong", "", room.title), element("span", "", roomSummary(room)));
+        const add = element("button", "button button-secondary", inRoom ? "Already in this room" : full ? "Room is full" : "Add to this room");
+        add.type = "button";
+        add.disabled = inRoom || full;
+        add.setAttribute("aria-label", `${add.textContent}: ${room.title}`);
+        add.addEventListener("click", () => {
+          const persisted = addRoomMember(room, profile.id);
+          add.textContent = "Added";
+          add.setAttribute("aria-label", `Added to ${room.title}`);
+          add.disabled = true;
+          const link = element("a", "company-link", "Open the room");
+          link.href = roomHref(room);
+          status.replaceChildren(`${profile.name} was added to "${room.title}"${persisted ? "" : " for this visit; browser storage is full or unavailable"}. `, link);
+          link.focus();
+        });
+        if (!add.disabled && !firstFocus) firstFocus = add;
+        item.append(copy, add);
+        list.append(item);
+      }
+      body.append(list, status);
+    }
+    body.append(element("h3", "detail-label", opportunityRooms.length ? "Or start a new room" : "Start a room"));
+    const form = element("form", "opportunity-form");
+    const field = (tag, id, labelText, attributes = {}) => {
+      const label = element("label", "", labelText);
+      label.htmlFor = id;
+      const input = element(tag);
+      input.id = id;
+      Object.assign(input, attributes);
+      form.append(label, input);
+      return input;
+    };
+    const title = field("input", "invite-room-title", "Project name", { maxLength: 80, required: true, placeholder: "Fleet management platform" });
+    const brief = field("textarea", "invite-room-brief", "What's the project? (optional)", { rows: 3, maxLength: 1500, placeholder: "What you're building, where, and the help you need." });
+    brief.classList.add("chat-input");
+    const owner = companyPicker("invite-room-owner", "Opening the room as", { includeNone: true, selected: profiles.find((entry) => entry.local)?.id || "" });
+    form.append(owner.label, owner.select);
+    const status = element("p", "chat-status");
+    status.setAttribute("role", "status");
+    const submit = element("button", "button button-primary", `Open a room with ${profile.name}`);
+    submit.type = "submit";
+    const actions = element("div", "chat-actions");
+    actions.append(submit, dictationButton(brief, status));
+    form.append(actions, status);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const fail = (message, input) => {
+        status.textContent = message;
+        input.focus();
+      };
+      const name = cleanText(title.value, 80);
+      const ownerId = knownProfileId(owner.select.value) ? owner.select.value : "";
+      if (!name) return fail("Give the project a name.", title);
+      if (ownerId === profile.id) return fail(`Choose who is opening the room. ${profile.name} is the company you're inviting.`, owner.select);
+      if (opportunityRooms.length >= MAX_ROOMS) return fail(`You have ${MAX_ROOMS} rooms already. Close one from its room page first.`, submit);
+      const text = cleanMessage(brief.value).slice(0, 1500);
+      const own = needForCategory(profile.category);
+      const room = createRoom({
+        title: name, brief: text, needs: [...new Set([...(own ? [own.id] : []), ...detectNeeds(text)])], owner: ownerId,
+        members: [{ companyId: profile.id, needs: own ? [own.id] : [] }],
+      });
+      if (!room) return fail("This browser couldn't save the room. Its storage may be full or turned off.", submit);
+      window.location.href = roomHref(room);
+    });
+    body.append(form);
+    showDialog(dialog, opener);
+    (firstFocus || title).focus();
+  }
+
+  function renderOpportunityRoom() {
+    const container = document.getElementById("opportunity-room");
+    if (!container) return;
+    container.replaceChildren();
+    const requestedId = new URLSearchParams(window.location.search).get("id");
+    const room = opportunityRooms.find((entry) => entry.id === requestedId);
+    if (!room) {
+      const notice = element("section", "profile-not-found");
+      notice.append(element("p", "dialog-kicker", "Opportunity Room"), element("h1", "", requestedId ? "This room isn't available here." : "Choose an Opportunity Room."));
+      notice.append(element("p", "dialog-copy", requestedId
+        ? "In this preview, rooms are saved in the browser where they were opened, so this one may be in another browser or it was closed."
+        : "Describe a project and BOND suggests companies to build it with, then opens a private room for the team."));
+      const start = element("a", "button button-primary", "Start an Opportunity Room");
+      start.href = "index.html#rooms";
+      const dashboard = element("a", "company-link", "Your rooms on the dashboard");
+      dashboard.href = "dashboard.html#rooms";
+      notice.append(start, dashboard);
+      container.append(notice);
+      return;
+    }
+    document.title = `${room.title} — BOND Opportunity Room`;
+    const ownerProfile = resolveProfile(room.owner);
+    const ownerName = ownerProfile ? ownerProfile.name : "You";
+    const save = () => {
+      room.updated = new Date().toISOString();
+      return saveRooms();
+    };
+    const saved = (persisted, text) => persisted ? text : `${text} Saved for this visit only; browser storage is full or unavailable.`;
+    const memberIds = () => room.members.map((member) => member.companyId);
+    const button = (text, className, key, onClick, label) => {
+      const node = element("button", className, text);
+      node.type = "button";
+      node.dataset.roomKey = key;
+      if (label) node.setAttribute("aria-label", label);
+      node.addEventListener("click", () => onClick(node));
+      return node;
+    };
+    const confirmButton = (text, confirmText, key, onConfirm, label) => {
+      const node = button(text, "button button-secondary room-danger", key, () => {
+        if (node.dataset.armed) return onConfirm();
+        node.dataset.armed = "true";
+        node.textContent = confirmText;
+        node.setAttribute("aria-label", label ? `${confirmText}: ${label}` : confirmText);
+      }, label ? `${text}: ${label}` : undefined);
+      node.addEventListener("blur", () => {
+        delete node.dataset.armed;
+        node.textContent = text;
+        if (label) node.setAttribute("aria-label", `${text}: ${label}`);
+        else node.removeAttribute("aria-label");
+      });
+      return node;
+    };
+    const field = (form, tag, id, labelText, attributes = {}) => {
+      const label = element("label", "", labelText);
+      label.htmlFor = id;
+      const input = element(tag);
+      input.id = id;
+      Object.assign(input, attributes);
+      form.append(label, input);
+      return input;
+    };
+
+    const head = element("header", "room-head");
+    head.append(element("p", "dialog-kicker", "Opportunity Room · Private"), element("h1", "", room.title));
+    head.append(element("p", "room-meta", `Opened ${shortDate(room.at)} by ${ownerProfile ? ownerProfile.name : "you"}`));
+    head.append(element("p", "room-privacy", "Only the companies you invite can see this room. In this preview it is saved in this browser, and invitations are sent when BOND launches accounts."));
+    const nav = element("nav", "profile-section-nav room-nav");
+    nav.setAttribute("aria-label", "Room sections");
+    const layout = element("div", "room-layout");
+    const mainColumn = element("div", "room-main");
+    const sideColumn = element("div", "room-side");
+    layout.append(mainColumn, sideColumn);
+    const parts = {};
+    const section = (column, id, title, copy) => {
+      const block = element("section", "profile-section room-section");
+      block.id = id;
+      const heading = element("h2", "", title);
+      heading.id = `${id}-heading`;
+      heading.tabIndex = -1;
+      block.setAttribute("aria-labelledby", heading.id);
+      block.append(heading);
+      if (copy) block.append(element("p", "dialog-copy", copy));
+      const content = element("div", "room-section-body");
+      block.append(content);
+      column.append(block);
+      const link = element("a", "", title);
+      link.href = `#${id}`;
+      nav.append(link);
+      parts[id] = { block, heading, content, draw: () => {} };
+      return parts[id];
+    };
+    const update = (...names) => {
+      for (const name of names) {
+        const part = parts[name];
+        const active = document.activeElement;
+        const hadFocus = part.block.contains(active);
+        const key = hadFocus ? active.dataset.roomKey : "";
+        part.draw();
+        if (!hadFocus || part.block.contains(document.activeElement)) continue;
+        const next = key && [...part.block.querySelectorAll("[data-room-key]")].find((node) => node.dataset.roomKey === key);
+        (next && !next.disabled ? next : part.heading).focus();
+      }
+    };
+
+    const project = section(mainColumn, "project", "Project");
+    let editingNeeds = false;
+    project.draw = () => {
+      const body = project.content;
+      body.replaceChildren();
+      body.append(element("p", room.brief ? "room-brief-text" : "room-copy", room.brief || "No project description was added."));
+      body.append(element("h3", "detail-label", "What the project needs"));
+      if (!room.needs.length) body.append(element("p", "room-copy", "Nothing picked yet. Choose below."));
+      const list = element("ul", "room-needs");
+      for (const id of room.needs) {
+        const need = needById(id);
+        const covering = room.members
+          .filter((member) => member.needs.includes(id) || resolveProfile(member.companyId)?.category === need.category)
+          .map((member) => resolveProfile(member.companyId)).filter(Boolean);
+        const item = element("li", covering.length ? "room-need is-covered" : "room-need");
+        const copy = element("div");
+        copy.append(element("strong", "", need.label), element("span", "", covering.length ? `Covered by ${joinNames(covering.map((profile) => profile.name))}` : "Not covered yet"));
+        item.append(copy);
+        if (!covering.length) {
+          const next = suggestTeam(room.brief, [id], { city: room.city, preference: room.preference, exclude: [room.owner, ...memberIds()] }).team[0];
+          if (next && room.members.length < MAX_ROOM_MEMBERS) {
+            item.append(button(`Invite ${next.profile.name}`, "button button-secondary", `need-${id}`, () => {
+              const persisted = addRoomMember(room, next.profile.id, [id]);
+              update("project", "team", "conversation", "proposals");
+              announce(saved(persisted, `${next.profile.name} was invited.`));
+            }, `Invite ${next.profile.name} for ${need.label.toLocaleLowerCase()}`));
+          } else if (!next) {
+            item.append(button("Post it on the Opportunity Board", "button button-secondary", `post-${id}`, (node) => openPostOpportunity(node, room.owner)));
+          }
+        }
+        list.append(item);
+      }
+      body.append(list);
+      const edit = element("details", "room-edit-needs");
+      edit.open = editingNeeds;
+      edit.addEventListener("toggle", () => { editingNeeds = edit.open; });
+      edit.append(element("summary", "", "Change what this project needs"));
+      const picker = element("fieldset", "room-needs-picker");
+      picker.append(element("legend", "sr-only", "Project needs"));
+      for (const need of projectNeeds) {
+        const label = element("label", "room-need-chip");
+        const box = element("input");
+        box.type = "checkbox";
+        box.checked = room.needs.includes(need.id);
+        box.dataset.roomKey = `pick-${need.id}`;
+        box.addEventListener("change", () => {
+          room.needs = box.checked ? [...room.needs, need.id] : room.needs.filter((id) => id !== need.id);
+          save();
+          update("project");
+        });
+        label.append(box, element("span", "", need.label));
+        picker.append(label);
+      }
+      edit.append(picker);
+      body.append(edit);
+    };
+
+    const team = section(sideColumn, "team", "Team");
+    team.draw = () => {
+      const body = team.content;
+      body.replaceChildren();
+      const list = element("ul", "room-members");
+      const ownerRow = element("li", "room-member");
+      const ownerAvatar = element("span", "company-avatar");
+      ownerAvatar.setAttribute("aria-hidden", "true");
+      if (ownerProfile) ownerAvatar.append(companyLogo(ownerProfile));
+      else ownerAvatar.append("You");
+      const ownerMain = element("div", "room-member-main");
+      ownerMain.append(element("strong", "", ownerName), element("span", "feed-meta", "Room owner · you"));
+      ownerRow.append(ownerAvatar, ownerMain);
+      list.append(ownerRow);
+      room.members.forEach((member, index) => {
+        const profile = resolveProfile(member.companyId);
+        if (!profile) return;
+        const item = element("li", "room-member");
+        const avatar = element("span", "company-avatar");
+        avatar.classList.toggle("has-uploaded-logo", Boolean(profile.logo));
+        avatar.append(companyLogo(profile));
+        const main = element("div", "room-member-main");
+        const covers = member.needs.map((id) => needById(id)?.label).filter(Boolean);
+        main.append(
+          button(profile.name, "feed-company", `member-${profile.id}`, (node) => openCompany(profile, node), `View ${profile.name} profile`),
+          element("span", "feed-meta", `${index === 0 ? "Lead" : "Team member"} · ${covers.length ? covers.join(", ") : profile.category}`),
+          element("span", "room-member-status", `Invited · ${verificationLabel(profile)}`),
+        );
+        const actions = element("div", "room-member-actions");
+        actions.append(
+          button("Message", "button button-secondary", `message-${profile.id}`, (node) => openConversation(profile, node), `Message ${profile.name}`),
+          confirmButton("Remove", "Tap again to remove", `remove-${profile.id}`, () => {
+            room.members = room.members.filter((entry) => entry.companyId !== profile.id);
+            pushRoomMessage(room, { from: "", note: true, at: new Date().toISOString(), text: `You removed ${profile.name} from the room.` });
+            const persisted = save();
+            update("project", "team", "conversation", "proposals");
+            announce(saved(persisted, `${profile.name} was removed from the room.`));
+          }, profile.name),
+        );
+        item.append(avatar, main, actions);
+        list.append(item);
+      });
+      body.append(list);
+      const available = profiles.filter((profile) => !profile.local && profile.id !== room.owner && !memberIds().includes(profile.id));
+      if (room.members.length >= MAX_ROOM_MEMBERS) {
+        body.append(element("p", "room-copy", `A room holds up to ${MAX_ROOM_MEMBERS} companies.`));
+      } else if (available.length) {
+        const form = element("form", "room-form room-invite");
+        const select = field(form, "select", "room-invite-company", "Invite another company");
+        select.dataset.roomKey = "invite-company";
+        available.forEach((profile) => select.append(new Option(`${profile.name} · ${profile.category}`, profile.id)));
+        const invite = element("button", "button button-secondary", "Invite");
+        invite.type = "submit";
+        invite.dataset.roomKey = "invite-submit";
+        form.append(invite);
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          if (!available.some((profile) => profile.id === select.value)) return;
+          const profile = resolveProfile(select.value);
+          const persisted = addRoomMember(room, profile.id);
+          update("project", "team", "conversation", "proposals");
+          announce(saved(persisted, `${profile.name} was invited.`));
+        });
+        body.append(form);
+      }
+      body.append(element("p", "form-hint", "Invitations are saved here and sent when BOND launches accounts."));
+    };
+
+    const conversation = section(mainColumn, "conversation", "Conversation", "Share the brief, timelines, and questions with the whole team.");
+    const thread = element("div", "chat-thread room-thread");
+    thread.setAttribute("role", "log");
+    thread.setAttribute("aria-live", "polite");
+    thread.setAttribute("aria-relevant", "additions");
+    thread.setAttribute("aria-label", "Room conversation");
+    conversation.content.append(thread);
+    conversation.draw = () => {
+      thread.replaceChildren();
+      if (!room.messages.some((message) => !message.note)) thread.append(element("p", "chat-empty", "Start the conversation: introduce the project and ask the team what they need from you."));
+      for (const message of room.messages) {
+        const entry = element("article", message.note ? "room-note" : "chat-message");
+        if (!message.note) entry.append(element("p", "chat-message-author", resolveProfile(message.from)?.name || "You"));
+        entry.append(element("p", message.note ? "" : "chat-message-text", message.text));
+        const when = new Date(message.at);
+        const time = element("time", "chat-message-time", `${shortDate(message.at)}, ${when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`);
+        time.dateTime = message.at;
+        entry.append(time);
+        thread.append(entry);
+      }
+      thread.scrollTop = thread.scrollHeight;
+    };
+    const chatForm = element("form", "chat-form room-chat-form");
+    const chatInput = field(chatForm, "textarea", "room-message", "Message the team", { rows: 3, maxLength: 1000, required: true, placeholder: "Share the timeline, budget range, or a question for the team…" });
+    chatInput.classList.add("chat-input");
+    const chatStatus = element("p", "chat-status");
+    chatStatus.setAttribute("role", "status");
+    const send = element("button", "button button-primary", "Send to the room");
+    send.type = "submit";
+    const chatActions = element("div", "chat-actions");
+    chatActions.append(send, dictationButton(chatInput, chatStatus));
+    chatForm.append(chatActions, chatStatus);
+    chatInput.addEventListener("input", () => chatInput.setCustomValidity(""));
+    chatForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const text = cleanMessage(chatInput.value).slice(0, 1000);
+      if (!text) {
+        chatInput.setCustomValidity("Write a message before sending.");
+        chatInput.reportValidity();
+        return;
+      }
+      pushRoomMessage(room, { from: room.owner, text, at: new Date().toISOString(), note: false });
+      const persisted = saveRooms();
+      conversation.draw();
+      chatInput.value = "";
+      chatInput.focus();
+      chatStatus.textContent = saved(persisted, "Saved in this room. The team sees it when BOND launches accounts.");
+    });
+    conversation.block.append(chatForm);
+
+    const proposals = section(mainColumn, "proposals", "Proposals", "Invited companies send proposals here so you can compare price, timeline, and approach side by side.");
+    const proposalList = element("div", "room-proposals");
+    proposals.content.append(proposalList);
+    const proposalForm = element("form", "room-form room-proposal-form");
+    const fromSelect = field(proposalForm, "select", "proposal-from", "From");
+    const proposalTitle = field(proposalForm, "input", "proposal-title", "Proposal title", { maxLength: 100, required: true, placeholder: "Platform build, phase one" });
+    const proposalRow = element("div", "room-form-row");
+    const priceBox = element("div");
+    const price = field(priceBox, "input", "proposal-price", "Price (optional)", { maxLength: 40, placeholder: "$48,000 fixed" });
+    const timelineBox = element("div");
+    const timeline = field(timelineBox, "input", "proposal-timeline", "Timeline (optional)", { maxLength: 60, placeholder: "10 weeks" });
+    proposalRow.append(priceBox, timelineBox);
+    proposalForm.append(proposalRow);
+    const summary = field(proposalForm, "textarea", "proposal-summary", "Approach", { rows: 4, maxLength: 800, required: true, placeholder: "What the company will deliver and how." });
+    summary.classList.add("chat-input");
+    const proposalStatus = element("p", "chat-status");
+    proposalStatus.setAttribute("role", "status");
+    const addProposal = element("button", "button button-primary", "Add proposal");
+    addProposal.type = "submit";
+    const proposalActions = element("div", "chat-actions");
+    proposalActions.append(addProposal, dictationButton(summary, proposalStatus));
+    proposalForm.append(proposalActions, proposalStatus);
+    const proposalDetails = element("details", "room-add");
+    proposalDetails.append(element("summary", "", "Add a sample proposal to try it"), proposalForm);
+    proposals.block.append(proposalDetails);
+    const statusLabels = { new: "New", shortlisted: "Shortlisted", declined: "Declined" };
+    proposals.draw = () => {
+      const current = fromSelect.value;
+      fromSelect.replaceChildren();
+      room.members.forEach((member) => {
+        const profile = resolveProfile(member.companyId);
+        if (profile) fromSelect.append(new Option(profile.name, profile.id));
+      });
+      if (memberIds().includes(current)) fromSelect.value = current;
+      fromSelect.disabled = !room.members.length;
+      addProposal.disabled = !room.members.length;
+      proposalList.replaceChildren();
+      if (!room.proposals.length) {
+        proposalList.append(element("p", "room-copy", "No proposals yet. When BOND launches, invited companies submit them here. To see how comparing works, add a sample one below."));
+        return;
+      }
+      const order = { shortlisted: 0, new: 1, declined: 2 };
+      const list = element("ul", "room-proposal-list");
+      [...room.proposals].sort((a, b) => order[a.status] - order[b.status] || Date.parse(b.at) - Date.parse(a.at)).forEach((proposal) => {
+        const from = resolveProfile(proposal.from);
+        const card = element("li", `room-proposal is-${proposal.status}`);
+        const top = element("div", "room-proposal-head");
+        top.append(element("strong", "", proposal.title), element("span", "room-tag", statusLabels[proposal.status]));
+        card.append(top, element("p", "feed-meta", `${from ? from.name : "A company"} · added ${shortDate(proposal.at)} · Sample you added`));
+        if (proposal.price || proposal.timeline) {
+          const facts = element("dl", "event-facts");
+          if (proposal.price) facts.append(element("dt", "", "Price"), element("dd", "", proposal.price));
+          if (proposal.timeline) facts.append(element("dt", "", "Timeline"), element("dd", "", proposal.timeline));
+          card.append(facts);
+        }
+        card.append(element("p", "room-proposal-summary", proposal.summary));
+        const actions = element("div", "room-proposal-actions");
+        const setStatus = (next, message) => {
+          proposal.status = next;
+          const persisted = save();
+          update("proposals");
+          announce(saved(persisted, message));
+        };
+        actions.append(
+          button(proposal.status === "shortlisted" ? "Remove from shortlist" : "Shortlist", "button button-secondary", `shortlist-${proposal.id}`,
+            () => setStatus(proposal.status === "shortlisted" ? "new" : "shortlisted", proposal.status === "shortlisted" ? "Removed from the shortlist." : "Added to the shortlist."), `${proposal.status === "shortlisted" ? "Remove from shortlist" : "Shortlist"}: ${proposal.title}`),
+          button(proposal.status === "declined" ? "Reconsider" : "Decline", "button button-secondary", `decline-${proposal.id}`,
+            () => setStatus(proposal.status === "declined" ? "new" : "declined", proposal.status === "declined" ? "Proposal moved back to new." : "Proposal declined."), `${proposal.status === "declined" ? "Reconsider" : "Decline"}: ${proposal.title}`),
+          confirmButton("Delete", "Tap again to delete", `delete-${proposal.id}`, () => {
+            room.proposals = room.proposals.filter((entry) => entry.id !== proposal.id);
+            const persisted = save();
+            update("proposals");
+            announce(saved(persisted, "Proposal deleted."));
+          }, proposal.title),
+        );
+        card.append(actions);
+        list.append(card);
+      });
+      proposalList.append(list);
+    };
+    proposalForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const fail = (message, input) => {
+        proposalStatus.textContent = message;
+        input.focus();
+      };
+      const from = memberIds().includes(fromSelect.value) ? fromSelect.value : "";
+      const titleText = cleanText(proposalTitle.value, 100);
+      const approach = cleanMessage(summary.value).slice(0, 800);
+      if (!from) return fail("Invite a company first; proposals come from team members.", fromSelect);
+      if (!titleText) return fail("Give the proposal a title.", proposalTitle);
+      if (!approach) return fail("Describe the approach.", summary);
+      if (room.proposals.length >= MAX_ROOM_PROPOSALS) return fail(`A room holds up to ${MAX_ROOM_PROPOSALS} proposals. Delete one first.`, addProposal);
+      room.proposals.push({ id: newId("prop"), from, title: titleText, price: cleanText(price.value, 40), timeline: cleanText(timeline.value, 60), summary: approach, at: new Date().toISOString(), status: "new" });
+      const persisted = save();
+      proposals.draw();
+      proposalForm.reset();
+      fromSelect.value = from;
+      proposalTitle.focus();
+      proposalStatus.textContent = saved(persisted, "Proposal added. Shortlist or decline it above.");
+    });
+
+    const meetings = section(sideColumn, "meetings", "Meetings", "Schedule video calls with the team. Paste a Zoom, Teams, or Google Meet link; video calls inside BOND are planned.");
+    const meetingList = element("div");
+    meetings.content.append(meetingList);
+    const meetingForm = element("form", "room-form room-meeting-form");
+    const topic = field(meetingForm, "input", "meeting-topic", "Topic", { maxLength: 100, required: true, defaultValue: "Project kickoff" });
+    const meetingRow = element("div", "room-form-row");
+    const dateBox = element("div");
+    const tomorrow = new Date(Date.now() + DAY_MS);
+    const meetingDate = field(dateBox, "input", "meeting-date", "Date", { type: "date", required: true, value: localDateValue(tomorrow), min: localDateValue(new Date()), max: localDateValue(new Date(Date.now() + 365 * DAY_MS)) });
+    const timeBox = element("div");
+    const meetingTime = field(timeBox, "input", "meeting-time", "Start time", { type: "time", required: true, value: "10:00" });
+    meetingRow.append(dateBox, timeBox);
+    meetingForm.append(meetingRow);
+    const length = field(meetingForm, "select", "meeting-length", "Length");
+    meetingDurations.forEach((minutes) => length.append(new Option(minutes < 60 ? `${minutes} minutes` : minutes === 60 ? "1 hour" : `${minutes / 60} hours`, String(minutes))));
+    length.value = "30";
+    const meetingLink = field(meetingForm, "input", "meeting-link", "Video link (optional)", { type: "url", maxLength: 300, placeholder: "https://…" });
+    const meetingStatus = element("p", "chat-status");
+    meetingStatus.setAttribute("role", "status");
+    const schedule = element("button", "button button-primary", "Schedule meeting");
+    schedule.type = "submit";
+    meetingForm.append(schedule, meetingStatus);
+    const meetingDetails = element("details", "room-add");
+    meetingDetails.append(element("summary", "", "Schedule a meeting"), meetingForm);
+    meetings.block.append(meetingDetails);
+    const memberNames = () => joinNames(room.members.map((member) => resolveProfile(member.companyId)?.name).filter(Boolean));
+    meetings.draw = () => {
+      meetingList.replaceChildren();
+      if (!room.meetings.length) {
+        meetingList.append(element("p", "room-copy", "No meetings yet."));
+        return;
+      }
+      const list = element("ul", "room-meetings");
+      [...room.meetings].sort((a, b) => Number(eventIsUpcoming(b)) - Number(eventIsUpcoming(a)) || Date.parse(a.start) - Date.parse(b.start)).forEach((meeting) => {
+        const upcoming = eventIsUpcoming(meeting);
+        const item = element("li", upcoming ? "room-meeting" : "room-meeting is-past");
+        item.append(element("strong", "", meeting.topic), element("span", "feed-meta", `${eventWhen(meeting, { long: true })}${upcoming ? "" : " · Ended"}`));
+        const actions = element("div", "room-proposal-actions");
+        if (meeting.link && upcoming) {
+          const join = element("a", "button button-secondary", "Join meeting");
+          join.href = meeting.link;
+          join.target = "_blank";
+          join.rel = "noopener noreferrer";
+          actions.append(join);
+        }
+        if (upcoming) {
+          actions.append(button("Add to calendar", "button button-secondary", `calendar-${meeting.id}`, () => downloadCalendar({
+            uid: meeting.id, title: `${room.title}: ${meeting.topic}`, start: meeting.start, end: eventEnd(meeting),
+            location: meeting.link || "Video meeting",
+            details: `Opportunity Room on BOND with ${memberNames() || "your team"}.${meeting.link ? `\n\nJoin: ${meeting.link}` : ""}`,
+          }), `Add ${meeting.topic} to your calendar`));
+        }
+        actions.append(confirmButton(upcoming ? "Cancel" : "Remove", upcoming ? "Tap again to cancel" : "Tap again to remove", `cancel-${meeting.id}`, () => {
+          room.meetings = room.meetings.filter((entry) => entry.id !== meeting.id);
+          if (upcoming) pushRoomMessage(room, { from: "", note: true, at: new Date().toISOString(), text: `You canceled "${meeting.topic}" on ${eventWhen(meeting)}.` });
+          const persisted = save();
+          update("meetings", "conversation");
+          announce(saved(persisted, upcoming ? "Meeting canceled." : "Meeting removed."));
+        }, meeting.topic));
+        item.append(actions);
+        list.append(item);
+      });
+      meetingList.append(list);
+    };
+    meetingForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const fail = (message, input) => {
+        meetingStatus.textContent = message;
+        input.focus();
+      };
+      const topicText = cleanText(topic.value, 100);
+      const start = /^\d{4}-\d{2}-\d{2}$/.test(meetingDate.value) && /^\d{2}:\d{2}$/.test(meetingTime.value) ? new Date(`${meetingDate.value}T${meetingTime.value}`) : null;
+      const link = normalizeEventLink(meetingLink.value);
+      if (!topicText) return fail("Add a topic for the meeting.", topic);
+      if (!start || !Number.isFinite(start.getTime()) || start.getTime() <= Date.now()) return fail("Pick a date and start time in the future.", meetingDate);
+      if (start.getTime() > Date.now() + 366 * DAY_MS) return fail("Pick a date within the next year.", meetingDate);
+      if (link === null) return fail("Use a secure https:// video link.", meetingLink);
+      if (room.meetings.length >= MAX_ROOM_MEETINGS) return fail(`A room holds up to ${MAX_ROOM_MEETINGS} meetings. Remove an old one first.`, schedule);
+      const meeting = { id: newId("meet"), topic: topicText, start: start.toISOString(), duration: meetingDurations.includes(Number(length.value)) ? Number(length.value) : 30, link, at: new Date().toISOString() };
+      room.meetings.push(meeting);
+      pushRoomMessage(room, { from: "", note: true, at: meeting.at, text: `You scheduled "${topicText}" for ${eventWhen(meeting)}.` });
+      const persisted = save();
+      meetings.draw();
+      conversation.draw();
+      meetingForm.reset();
+      meetingDate.value = localDateValue(tomorrow);
+      meetingTime.value = "10:00";
+      length.value = "30";
+      topic.focus();
+      meetingStatus.textContent = saved(persisted, `Scheduled for ${eventWhen(meeting)}. Use Add to calendar to save it.`);
+    });
+
+    const closing = element("section", "room-close");
+    closing.setAttribute("aria-label", "Close this room");
+    closing.append(element("p", "room-copy", "Done with this project? Closing the room deletes its conversation, meetings, and proposals from this browser."));
+    closing.append(confirmButton("Close this room", "Tap again to close and delete", "close-room", () => {
+      opportunityRooms.splice(opportunityRooms.indexOf(room), 1);
+      saveRooms();
+      window.location.href = "dashboard.html#rooms";
+    }));
+    sideColumn.append(closing);
+
+    nav.replaceChildren(...[...mainColumn.children, ...sideColumn.children]
+      .map((block) => block.id && nav.querySelector(`a[href="#${block.id}"]`)).filter(Boolean));
+    container.append(head, nav, layout);
+    Object.values(parts).forEach((part) => part.draw());
+  }
+
   function dashboardSection(container, id, title, copy) {
     const block = element("section", "dashboard-section");
     block.id = id;
@@ -3770,6 +4795,21 @@
       opportunities.append(list);
     } else {
       dashboardEmpty(opportunities, "Respond to a request on the Opportunity Board to keep track of it here.", dashboardLink("Open the Opportunity Board", "index.html#opportunities"));
+    }
+
+    const roomsBlock = dashboardSection(container, "rooms", "Opportunity Rooms", "Private project rooms with the companies you invited: conversation, meetings, and proposals.");
+    if (opportunityRooms.length) {
+      const list = element("ul", "dashboard-list");
+      for (const room of opportunityRooms) {
+        list.append(dashboardItemRow(room.title, roomSummary(room), dashboardLink("Open room", roomHref(room), "button button-secondary")));
+      }
+      roomsBlock.append(list);
+      const more = element("p", "form-hint");
+      more.append(dashboardLink("Start another Opportunity Room", "index.html#rooms"));
+      roomsBlock.append(more);
+    } else {
+      dashboardEmpty(roomsBlock, "Describe a project and BOND suggests companies to build it with, then opens a private room for the team.",
+        dashboardLink("Start an Opportunity Room", "index.html#rooms", "button button-primary"));
     }
 
     const viewEventButton = (event, key, text = "View") => dashboardButton(text, "button button-secondary", key, (button) => openEvent(event, button), `${text}: ${event.title}`);
@@ -4516,6 +5556,8 @@
     renderDirectory();
     renderFeatured();
     renderMatchmaker();
+    renderRoomBuilder();
+    renderOpportunityRoom();
     renderExpoFloor();
     renderOpportunities();
     renderEvents();

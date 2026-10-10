@@ -21,6 +21,7 @@
   <link rel="stylesheet" href="spotlight.css">
   <link rel="stylesheet" href="homepage.css">
   <link rel="stylesheet" href="board.css">
+  <link rel="stylesheet" href="rooms.css">
   <script src="live-audio.js" defer></script>
   <script src="app.js" defer></script>
 </head>
@@ -163,6 +164,25 @@
           <button class="button button-primary" type="submit">Find my matches <span aria-hidden="true">→</span></button>
         </form>
         <div id="matchmaker-results" class="matchmaker-results" aria-live="polite" hidden></div>
+      </div>
+    </section>
+
+    <section id="rooms" class="section rooms-section" aria-labelledby="rooms-title">
+      <div class="container">
+        <div class="section-heading"><div><p class="eyebrow">Opportunity Rooms</p><h2 id="rooms-title">Describe the project.<br>Meet the team<span class="cyan">.</span></h2></div><p class="section-side-copy">Tell BOND what you need to build. It finds companies that fit, suggests a team, and opens a private room to work it out together.</p></div>
+        <form id="room-brief-form" class="room-brief" novalidate>
+          <label for="room-brief">What's the project?</label>
+          <textarea id="room-brief" name="brief" rows="4" maxlength="1500" placeholder="I need to build a fleet management platform that tracks our delivery trucks and their EV charging."></textarea>
+          <div class="room-examples" role="group" aria-label="Example projects"><span>Try an example:</span><button type="button" class="room-example" data-room-example="I need to build a fleet management platform that tracks our 40 delivery trucks, plans routes, and shows EV charging on a dashboard.">Fleet management platform</button><button type="button" class="room-example" data-room-example="We're planning a 60,000 square foot building expansion in Riverside with rooftop solar and battery storage, and need design, construction, and permitting help.">Solar-powered expansion</button><button type="button" class="room-example" data-room-example="We need to prototype and manufacture a lightweight drone sensor enclosure, about 500 units, with engineering support for the design.">Drone part prototype</button></div>
+          <div class="room-brief-row">
+            <div><label for="room-city">Where (optional)</label><input id="room-city" name="city" maxlength="80" placeholder="San Diego"></div>
+            <div><label for="room-preference">Preference (optional)</label><select id="room-preference" name="preference"><option value="">No preference</option><option>Veteran-owned</option><option>Woman-owned</option><option>Small business</option></select></div>
+            <div class="room-brief-actions"><button class="button button-primary" type="submit">Find companies <span aria-hidden="true">→</span></button></div>
+          </div>
+          <p id="room-brief-status" class="form-help" role="status"></p>
+        </form>
+        <div id="room-results" class="room-results" hidden></div>
+        <div id="room-list" class="room-list-box"></div>
       </div>
     </section>
 
