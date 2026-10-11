@@ -3230,6 +3230,29 @@
           view.addEventListener("click", () => openCompany(from, opener));
           item.append(view);
         }
+        if (!received) {
+          const withdraw = element("button", "danger-link", "Withdraw");
+          withdraw.type = "button";
+          withdraw.setAttribute("aria-label", `Withdraw your response from ${shortDate(response.at)}`);
+          withdraw.addEventListener("click", async () => {
+            if (withdraw.dataset.confirm !== "yes") {
+              withdraw.dataset.confirm = "yes";
+              withdraw.textContent = `Tap again to withdraw it from ${poster.name}`;
+              return;
+            }
+            withdraw.disabled = true;
+            try {
+              await withdrawMemberResponse(response);
+            } catch (error) {
+              withdraw.disabled = false;
+              withdraw.textContent = error.message;
+              return;
+            }
+            renderMemberOpportunityResponses(opportunity, container, opener, "Response withdrawn.");
+            refreshOpportunityLists();
+          });
+          item.append(withdraw);
+        }
         list.append(item);
       }
       container.append(list);
@@ -3257,7 +3280,8 @@
       container.append(element("p", "form-hint", "Responses are sent as one of your published companies, so the posting company knows who you are."), create);
       return;
     }
-    if (responses.length >= 3) {
+    const available = own.filter((profile) => responses.filter((response) => response.from === profile.id).length < 3);
+    if (!available.length) {
       container.append(element("p", "form-hint", `You've sent the most responses allowed to this request. ${poster.name} can reach you through your company profile.`), status);
       return;
     }
@@ -3267,7 +3291,7 @@
     pickerLabel.htmlFor = `respond-as-${opportunity.id}-${sequence}`;
     const picker = element("select");
     picker.id = pickerLabel.htmlFor;
-    own.forEach((profile) => picker.append(new Option(profile.name, profile.id)));
+    available.forEach((profile) => picker.append(new Option(profile.name, profile.id)));
     const label = element("label", "chat-label", "Message (optional)");
     label.htmlFor = `respond-message-${opportunity.id}-${sequence}`;
     const textarea = element("textarea", "chat-input");
@@ -3289,12 +3313,18 @@
     form.append(pickerLabel, picker, label, textarea, contactLabel, contact, actions, status);
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const from = own.find((profile) => profile.id === picker.value);
+      const from = available.find((profile) => profile.id === picker.value);
       if (!from) return;
+      const reply = cleanText(contact.value, 160);
+      if (!validReplyContact(reply)) {
+        status.textContent = "Enter an email address or phone number for the reply, or leave it empty.";
+        contact.focus();
+        return;
+      }
       submit.disabled = true;
       status.textContent = "Sending…";
       try {
-        await sendMemberResponse(opportunity, from, cleanMessage(textarea.value).slice(0, 800), cleanText(contact.value, 160));
+        await sendMemberResponse(opportunity, from, cleanMessage(textarea.value).slice(0, 800), reply);
       } catch (error) {
         submit.disabled = false;
         status.textContent = error.message;
@@ -5538,11 +5568,11 @@
   }
 
   function memberResponseFromRow(row) {
-    if (!row || typeof row !== "object" || typeof row.opportunity_id !== "string" || typeof row.profile_id !== "string") return null;
+    if (!row || typeof row !== "object" || typeof row.id !== "string" || typeof row.opportunity_id !== "string" || typeof row.profile_id !== "string") return null;
     const at = storedTime(row.created_at);
     if (!at) return null;
     return {
-      opportunityId: `mo-${row.opportunity_id}`, from: `m-${row.profile_id}`,
+      id: row.id, opportunityId: `mo-${row.opportunity_id}`, from: `m-${row.profile_id}`,
       text: cleanMessage(row.message).slice(0, 800), contact: cleanText(row.contact, 160), at,
     };
   }
@@ -5566,9 +5596,9 @@
     for (const key of Object.keys(memberResponses)) delete memberResponses[key];
     if (!account.user) return true;
     const { data, error } = await account.client.from(RESPONSES_TABLE).select(RESPONSE_COLUMNS)
-      .order("created_at", { ascending: true }).limit(500);
+      .order("created_at", { ascending: false }).limit(500);
     if (error) return false;
-    for (const row of Array.isArray(data) ? data : []) addMemberResponse(memberResponseFromRow(row));
+    for (const row of (Array.isArray(data) ? data : []).reverse()) addMemberResponse(memberResponseFromRow(row));
     return true;
   }
 
@@ -5581,6 +5611,7 @@
     if (error && /^Each company can have up to/.test(error.message || "")) {
       throw new Error(`${profile.name} already has 20 opportunity posts. Remove one to post another.`);
     }
+    if (error && /^You can post up to/.test(error.message || "")) throw new Error(`${error.message} Try again tomorrow.`);
     const opportunity = error ? null : memberOpportunityFromRow(data);
     if (!opportunity) throw new Error("Your opportunity couldn't be posted. Check your connection and try again.");
     memberOpportunities.unshift(opportunity);
@@ -5598,6 +5629,18 @@
       throw new Error("Your response couldn't be sent. Check your connection and try again.");
     }
     addMemberResponse(memberResponseFromRow(data));
+  }
+
+  function validReplyContact(value) {
+    return !value || Boolean(normalizeEmail(value)) || /^\+?[0-9][0-9 ().-]{5,24}$/.test(value);
+  }
+
+  async function withdrawMemberResponse(response) {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then withdraw.");
+    const { data, error } = await account.client.from(RESPONSES_TABLE).delete().eq("id", response.id).select("id");
+    if (error || !Array.isArray(data) || data.length !== 1) throw new Error("Your response couldn't be withdrawn. Check your connection and try again.");
+    const list = memberResponses[response.opportunityId] || [];
+    memberResponses[response.opportunityId] = list.filter((item) => item.id !== response.id);
   }
 
   function forgetMemberOpportunities(match) {

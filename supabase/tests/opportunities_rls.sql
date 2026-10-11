@@ -118,7 +118,14 @@ begin
     insert into rls_results values ('responder account ids are not readable', true);
   end;
 
-  insert into public.opportunity_responses (opportunity_id, profile_id) values (opportunity_a, profile_b);
+  begin
+    insert into public.opportunity_responses (opportunity_id, profile_id, contact) values (opportunity_a, profile_b, 'https://example.test/login');
+    insert into rls_results values ('reply contact must be an email or phone number', false);
+  exception when check_violation then
+    insert into rls_results values ('reply contact must be an email or phone number', true);
+  end;
+
+  insert into public.opportunity_responses (opportunity_id, profile_id, contact) values (opportunity_a, profile_b, '+1 (619) 555-0100');
   insert into public.opportunity_responses (opportunity_id, profile_id) values (opportunity_a, profile_b);
   begin
     insert into public.opportunity_responses (opportunity_id, profile_id) values (opportunity_a, profile_b);
@@ -147,6 +154,18 @@ begin
   select count(*) into seen from public.opportunity_responses;
   insert into rls_results values ('other members cannot see responses', seen = 0);
 
+  perform set_config('request.jwt.claims', json_build_object('sub', user_a, 'role', 'authenticated')::text, true);
+  delete from public.opportunity_responses where id = response_b;
+  get diagnostics affected = row_count;
+  insert into rls_results values ('posting company cannot delete a response', affected = 0);
+
+  perform set_config('request.jwt.claims', json_build_object('sub', user_b, 'role', 'authenticated')::text, true);
+  delete from public.opportunity_responses where id = response_b;
+  get diagnostics affected = row_count;
+  perform set_config('role', 'postgres', true);
+  insert into rls_results values ('responder withdraws their response and its contact', affected = 1 and not exists (select 1 from public.opportunity_responses where id = response_b));
+  perform set_config('role', 'authenticated', true);
+
   perform set_config('role', 'anon', true);
   perform set_config('request.jwt.claims', '{"role":"anon"}', true);
   begin
@@ -159,7 +178,21 @@ begin
   -- Limits and cleanup.
   perform set_config('role', 'authenticated', true);
   perform set_config('request.jwt.claims', json_build_object('sub', user_a, 'role', 'authenticated')::text, true);
-  for i in 2..20 loop
+  for i in 2..10 loop
+    insert into public.opportunities (profile_id, type, title, summary) values (profile_a, 'Partner', 'Post ' || i, 'Filler post');
+  end loop;
+  delete from public.opportunities where profile_id = profile_a and title = 'Post 10';
+  begin
+    insert into public.opportunities (profile_id, type, title, summary) values (profile_a, 'Partner', 'Post 11', 'Over the daily limit');
+    insert into rls_results values ('an 11th post in a day is rejected, even after deleting one', false);
+  exception when check_violation then
+    insert into rls_results values ('an 11th post in a day is rejected, even after deleting one', true);
+  end;
+
+  for i in 10..20 loop
+    perform set_config('role', 'postgres', true);
+    update private.opportunity_post_log set created_at = now() - interval '2 days';
+    perform set_config('role', 'authenticated', true);
     insert into public.opportunities (profile_id, type, title, summary) values (profile_a, 'Partner', 'Post ' || i, 'Filler post');
   end loop;
   begin
