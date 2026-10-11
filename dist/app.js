@@ -25,6 +25,10 @@
   const PROFILES_TABLE = "company_profiles";
   const OWNERS_TABLE = "company_profile_owners";
   const PROFILE_COLUMNS = "id,name,industry,description,location,tagline,story,services,certifications,projects,service_area,company_size,ownership,representative,website,publish_contact,public_email,public_phone,logo_path,cover_path,updated_at";
+  const OPPORTUNITIES_TABLE = "opportunities";
+  const OPPORTUNITY_COLUMNS = "id,profile_id,type,title,summary,scope,seeking,location,created_at";
+  const RESPONSES_TABLE = "opportunity_responses";
+  const RESPONSE_COLUMNS = "id,opportunity_id,profile_id,message,contact,created_at";
   const AUTH_STORAGE_KEY = "bond.auth";
   const FLASH_KEY = "bond.flash";
   const MAX_MEMBER_PROFILES = 5;
@@ -350,6 +354,9 @@
   const messagesByCompany = readSavedMessages();
   const questionsByCompany = readSavedMessages(QUESTIONS_KEY);
   const meetingRequests = readSavedMeetings();
+  const memberOpportunities = [];
+  // Responses to member opportunities: the ones this account sent, plus the ones its companies received.
+  const memberResponses = Object.create(null);
   const postedOpportunities = readPostedOpportunities();
   const responsesByOpportunity = readResponses();
   const followedCompanies = new Set(readStoredIds(FOLLOWS_KEY));
@@ -750,7 +757,15 @@
   }
 
   function allOpportunities() {
-    return [...postedOpportunities, ...sampleOpportunities];
+    return [...memberOpportunities, ...postedOpportunities, ...sampleOpportunities];
+  }
+
+  function opportunityResponses(opportunity) {
+    return (opportunity.member ? memberResponses : responsesByOpportunity)[opportunity.id] || [];
+  }
+
+  function postedByMe(opportunity) {
+    return Boolean(opportunity.local || (opportunity.member && isOwn(resolveProfile(opportunity.companyId))));
   }
 
   function readResponses() {
@@ -3002,7 +3017,7 @@
   }
 
   function opportunityLabel(opportunity) {
-    return `${opportunityTypes[opportunity.type]} · ${opportunity.local ? `Posted ${shortDate(opportunity.at)}` : "Sample opportunity"}`;
+    return `${opportunityTypes[opportunity.type]} · ${opportunity.local || opportunity.member ? `Posted ${shortDate(opportunity.at)}` : "Sample opportunity"}`;
   }
 
   function opportunityCard(opportunity, { thumbnail = true } = {}) {
@@ -3024,9 +3039,9 @@
     card.append(element("p", "opportunity-type", opportunityLabel(opportunity)));
     card.append(title, element("p", "opportunity-company", profile ? profile.name : ""));
     card.append(element("p", "opportunity-copy", opportunity.summary));
-    const responses = responsesByOpportunity[opportunity.id] || [];
+    const responses = opportunityResponses(opportunity);
     if (responses.length) {
-      card.append(element("p", "opportunity-flag", opportunity.local
+      card.append(element("p", "opportunity-flag", postedByMe(opportunity)
         ? `${responses.length} ${responses.length === 1 ? "response" : "responses"}`
         : "You responded"));
     }
@@ -3071,7 +3086,7 @@
     list.replaceChildren();
     const items = allOpportunities().filter((opportunity) => opportunity.companyId === profile.id);
     list.append(element("p", "dialog-copy", items.length
-      ? isOwn(profile) ? "Requests this company posted. Saved in this browser." : "Opportunities connected to this company."
+      ? isOwn(profile) ? profile.member ? "Requests this company posted. Everyone on BOND can see them." : "Requests this company posted. Saved in this browser." : "Opportunities connected to this company."
       : "No opportunity posts yet."));
     for (const opportunity of items) list.append(opportunityCard(opportunity, { thumbnail: false }));
     if (isOwn(profile)) {
@@ -3132,13 +3147,15 @@
     if (opportunity.scope?.length) {
       const scope = element("ul", "opportunity-scope");
       for (const item of opportunity.scope) scope.append(element("li", "", item));
-      body.append(element("h3", "detail-label", opportunity.local ? "Requirements" : "Sample discussion areas"), scope);
+      body.append(element("h3", "detail-label", opportunity.local || opportunity.member ? "Requirements" : "Sample discussion areas"), scope);
     }
-    body.append(element("p", "ownership-note", opportunity.local
-      ? "Saved only in this browser. Other visitors will see posts once BOND launches accounts."
-      : "Design preview only. This fictional opportunity is not an active solicitation."));
+    body.append(element("p", "ownership-note", opportunity.member
+      ? `Posted by a BOND member company. Responses go only to ${profile.name}.`
+      : opportunity.local
+        ? "Saved only in this browser. Publish the company to your BOND account so everyone can see its posts."
+        : "Design preview only. This fictional opportunity is not an active solicitation."));
     const respond = element("section", "opportunity-respond");
-    renderOpportunityResponses(opportunity, respond);
+    renderOpportunityResponses(opportunity, respond, opener);
     body.append(respond);
     const fits = opportunityFits(opportunity);
     if (fits.length) {
@@ -3155,30 +3172,146 @@
       }
       body.append(list, element("p", "match-disclosure", "Suggestions come from the industries the request names and shared capabilities. AI matching that reads full profiles is planned."));
     }
-    if (opportunity.local) {
+    if (postedByMe(opportunity)) {
       const remove = element("button", "danger-link", "Remove this post");
       remove.type = "button";
-      remove.addEventListener("click", () => {
+      const removeStatus = element("p", "chat-status");
+      removeStatus.setAttribute("role", "status");
+      remove.addEventListener("click", async () => {
         if (remove.dataset.confirm !== "yes") {
           remove.dataset.confirm = "yes";
-          remove.textContent = "Tap again to remove this post";
+          remove.textContent = opportunity.member ? "Tap again to remove this post and its responses for everyone" : "Tap again to remove this post";
           return;
         }
-        const index = postedOpportunities.findIndex((item) => item.id === opportunity.id);
-        if (index !== -1) postedOpportunities.splice(index, 1);
-        delete responsesByOpportunity[opportunity.id];
-        savePostedOpportunities();
-        writeStoredValue(RESPONSES_KEY, responsesByOpportunity);
+        if (opportunity.member) {
+          remove.disabled = true;
+          try {
+            await deleteMemberOpportunity(opportunity);
+          } catch (error) {
+            remove.disabled = false;
+            removeStatus.textContent = error.message;
+            return;
+          }
+        } else {
+          const index = postedOpportunities.findIndex((item) => item.id === opportunity.id);
+          if (index !== -1) postedOpportunities.splice(index, 1);
+          delete responsesByOpportunity[opportunity.id];
+          savePostedOpportunities();
+          writeStoredValue(RESPONSES_KEY, responsesByOpportunity);
+        }
         dialog.close();
         refreshOpportunityLists();
         announce("Your opportunity post was removed.");
       });
-      body.append(remove);
+      body.append(remove, removeStatus);
     }
     showDialog(dialog, opener);
   }
 
-  function renderOpportunityResponses(opportunity, container) {
+  function renderMemberOpportunityResponses(opportunity, container, opener, notice = "") {
+    container.replaceChildren();
+    const poster = resolveProfile(opportunity.companyId);
+    const responses = memberResponses[opportunity.id] || [];
+    const received = isOwn(poster);
+    container.append(element("h3", "detail-label", received ? "Responses" : "Interested? Respond"));
+    if (responses.length) {
+      const list = element("ul", "opportunity-responses");
+      for (const response of responses) {
+        const item = element("li", "opportunity-response");
+        const from = resolveProfile(response.from);
+        const name = from ? from.name : "A company no longer on BOND";
+        item.append(element("strong", "", received ? name : `You, as ${name}`), element("span", "", ` · ${shortDate(response.at)}`));
+        item.append(element("p", "", response.text || "Expressed interest."));
+        if (received && response.contact) item.append(element("p", "form-hint", `Reply to: ${response.contact}`));
+        if (received && from) {
+          const view = element("button", "company-link", "View company profile");
+          view.type = "button";
+          view.setAttribute("aria-label", `View ${from.name} profile`);
+          view.addEventListener("click", () => openCompany(from, opener));
+          item.append(view);
+        }
+        list.append(item);
+      }
+      container.append(list);
+    } else if (received) {
+      container.append(element("p", "form-hint", "No responses yet. Responses from other companies show up here and on your dashboard."));
+    }
+    if (received) return;
+    const status = element("p", "chat-status", notice);
+    status.setAttribute("role", "status");
+    if (!account.user) {
+      const signIn = element("button", "button button-primary", "Sign in to respond");
+      signIn.type = "button";
+      signIn.addEventListener("click", () => openAccount(signIn));
+      container.append(element("p", "form-hint", `Sign in and publish your company to respond. Your response goes only to ${poster.name}.`), signIn);
+      return;
+    }
+    const own = profiles.filter((item) => item.member && item.mine);
+    if (!own.length) {
+      const create = element("button", "button button-primary", "Publish your company profile");
+      create.type = "button";
+      create.addEventListener("click", () => {
+        document.getElementById("company-dialog")?.close();
+        openJoin(create);
+      });
+      container.append(element("p", "form-hint", "Responses are sent as one of your published companies, so the posting company knows who you are."), create);
+      return;
+    }
+    if (responses.length >= 3) {
+      container.append(element("p", "form-hint", `You've sent the most responses allowed to this request. ${poster.name} can reach you through your company profile.`), status);
+      return;
+    }
+    const form = element("form", "chat-form opportunity-response-form");
+    const sequence = ++chatSequence;
+    const pickerLabel = element("label", "", "Respond as");
+    pickerLabel.htmlFor = `respond-as-${opportunity.id}-${sequence}`;
+    const picker = element("select");
+    picker.id = pickerLabel.htmlFor;
+    own.forEach((profile) => picker.append(new Option(profile.name, profile.id)));
+    const label = element("label", "chat-label", "Message (optional)");
+    label.htmlFor = `respond-message-${opportunity.id}-${sequence}`;
+    const textarea = element("textarea", "chat-input");
+    textarea.id = label.htmlFor;
+    textarea.rows = 3;
+    textarea.maxLength = 800;
+    textarea.placeholder = `Introduce your company and how you could help ${poster.name}.`;
+    const contactLabel = element("label", "chat-label", "How should they reply? (optional)");
+    contactLabel.htmlFor = `respond-contact-${opportunity.id}-${sequence}`;
+    const contact = element("input", "chat-input");
+    contact.id = contactLabel.htmlFor;
+    contact.maxLength = 160;
+    contact.autocomplete = "email";
+    contact.placeholder = "Email or phone. Only the posting company sees it.";
+    const submit = element("button", "button button-primary", responses.length ? "Send another response" : "I'm interested");
+    submit.type = "submit";
+    const actions = element("div", "chat-actions");
+    actions.append(submit, dictationButton(textarea, status));
+    form.append(pickerLabel, picker, label, textarea, contactLabel, contact, actions, status);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const from = own.find((profile) => profile.id === picker.value);
+      if (!from) return;
+      submit.disabled = true;
+      status.textContent = "Sending…";
+      try {
+        await sendMemberResponse(opportunity, from, cleanMessage(textarea.value).slice(0, 800), cleanText(contact.value, 160));
+      } catch (error) {
+        submit.disabled = false;
+        status.textContent = error.message;
+        return;
+      }
+      renderMemberOpportunityResponses(opportunity, container, opener, `Response sent to ${poster.name}.`);
+      refreshOpportunityLists();
+      container.querySelector("button[type=submit]")?.focus();
+    });
+    container.append(form);
+  }
+
+  function renderOpportunityResponses(opportunity, container, opener) {
+    if (opportunity.member) {
+      renderMemberOpportunityResponses(opportunity, container, opener);
+      return;
+    }
     container.replaceChildren();
     const profile = resolveProfile(opportunity.companyId);
     const responses = responsesByOpportunity[opportunity.id] || [];
@@ -3239,6 +3372,7 @@
     const form = element("form", "opportunity-form");
     const picker = companyPicker("opportunity-company", "Posting as", { selected: companyId });
     if (!picker.hasOwn) createProfileHint(body);
+    if (ACCOUNTS_ENABLED) body.append(element("p", "form-hint", "Posts from your published companies are visible to everyone on BOND. Posts from browser drafts and sample companies stay in this browser."));
     const field = (tag, id, labelText, attributes = {}) => {
       const label = element("label", "", labelText);
       label.htmlFor = id;
@@ -3273,8 +3407,9 @@
     const status = element("p", "chat-status");
     status.setAttribute("role", "status");
     form.append(submit, status);
-    form.addEventListener("submit", (event) => {
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (submit.disabled) return;
       const record = {
         id: newId("opp"), type: opportunityTypes[type.value] ? type.value : "Service",
         companyId: knownProfileId(picker.select.value) ? picker.select.value : "",
@@ -3286,6 +3421,24 @@
       if (!record.companyId || !record.title || !record.summary) {
         status.textContent = "Choose a company and add a headline and description.";
         (!record.title ? title : summary).focus();
+        return;
+      }
+      const poster = resolveProfile(record.companyId);
+      if (poster?.member) {
+        submit.disabled = true;
+        status.textContent = "Posting…";
+        let posted;
+        try {
+          posted = await postMemberOpportunity(record, poster);
+        } catch (error) {
+          submit.disabled = false;
+          status.textContent = error.message;
+          return;
+        }
+        currentOpportunityFilter = "All";
+        refreshOpportunityLists();
+        openOpportunity(posted, opener);
+        announce("Opportunity posted. Everyone on BOND can see it now.");
         return;
       }
       postedOpportunities.unshift(record);
@@ -4834,8 +4987,9 @@
       .map(([id, at]) => ({ profile: resolveProfile(id), at }))
       .filter((entry) => entry.profile)
       .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
-    const responded = allOpportunities().filter((opportunity) => !opportunity.local && (responsesByOpportunity[opportunity.id] || []).length);
-    const responsesSent = responded.reduce((total, opportunity) => total + responsesByOpportunity[opportunity.id].length, 0);
+    const postedByYou = allOpportunities().filter((opportunity) => postedByMe(opportunity) && resolveProfile(opportunity.companyId));
+    const responded = allOpportunities().filter((opportunity) => !postedByMe(opportunity) && opportunityResponses(opportunity).length && resolveProfile(opportunity.companyId));
+    const responsesSent = responded.reduce((total, opportunity) => total + opportunityResponses(opportunity).length, 0);
     const hosting = allEvents().filter((event) => event.local && resolveProfile(event.companyId));
     const hostingUpcoming = hosting.filter(eventIsUpcoming);
     const attending = allEvents().filter((event) => eventRsvps[event.id] && eventIsUpcoming(event) && resolveProfile(event.companyId));
@@ -4852,7 +5006,7 @@
       [savedCompanies.size, "Saved companies", "connections"],
       [followedCompanies.size, "Following", "connections"],
       [conversations.length, conversations.length === 1 ? "Conversation" : "Conversations", "messages"],
-      [postedOpportunities.length, "Opportunities posted", "opportunities"],
+      [postedByYou.length, "Opportunities posted", "opportunities"],
       [responsesSent, responsesSent === 1 ? "Response sent" : "Responses sent", "opportunities"],
       [hostingUpcoming.length, "Events hosting", "hosting"],
       [attending.length, "Events attending", "events"],
@@ -4939,11 +5093,11 @@
 
     const opportunities = dashboardSection(container, "opportunities", "Opportunities");
     opportunities.append(element("h3", "detail-label", "Posted by you"));
-    if (postedOpportunities.length) {
+    if (postedByYou.length) {
       const list = element("ul", "dashboard-list");
-      for (const opportunity of postedOpportunities) {
+      for (const opportunity of postedByYou) {
         const poster = resolveProfile(opportunity.companyId);
-        const count = (responsesByOpportunity[opportunity.id] || []).length;
+        const count = opportunityResponses(opportunity).length;
         list.append(dashboardItemRow(opportunity.title,
           `${poster ? poster.name : ""} · ${opportunityTypes[opportunity.type]} · posted ${shortDate(opportunity.at)} · ${count} ${count === 1 ? "response" : "responses"}`,
           dashboardButton("View", "button button-secondary", `opportunity-${opportunity.id}`, (button) => openOpportunity(opportunity, button), `View ${opportunity.title}`)));
@@ -4958,7 +5112,7 @@
       const list = element("ul", "dashboard-list");
       for (const opportunity of responded) {
         const poster = resolveProfile(opportunity.companyId);
-        const last = responsesByOpportunity[opportunity.id].at(-1);
+        const last = opportunityResponses(opportunity).at(-1);
         list.append(dashboardItemRow(opportunity.title,
           `${poster ? poster.name : ""} · you responded ${shortDate(last.at)}`,
           dashboardButton("View", "button button-secondary", `responded-${opportunity.id}`, (button) => openOpportunity(opportunity, button), `View ${opportunity.title}`)));
@@ -5370,6 +5524,111 @@
     account.loaded = true;
   }
 
+  function memberOpportunityFromRow(row) {
+    if (!row || typeof row !== "object" || typeof row.id !== "string" || typeof row.profile_id !== "string") return null;
+    const title = cleanText(row.title, 100);
+    const summary = cleanText(row.summary, 600);
+    const at = storedTime(row.created_at);
+    if (!opportunityTypes[row.type] || !title || !summary || !at) return null;
+    return {
+      id: `mo-${row.id}`, remoteId: row.id, member: true, type: row.type, companyId: `m-${row.profile_id}`,
+      title, summary, detail: summary, scope: parseList(row.scope, 5, 80),
+      seeking: categories.includes(row.seeking) ? [row.seeking] : [], location: cleanText(row.location, 80), at,
+    };
+  }
+
+  function memberResponseFromRow(row) {
+    if (!row || typeof row !== "object" || typeof row.opportunity_id !== "string" || typeof row.profile_id !== "string") return null;
+    const at = storedTime(row.created_at);
+    if (!at) return null;
+    return {
+      opportunityId: `mo-${row.opportunity_id}`, from: `m-${row.profile_id}`,
+      text: cleanMessage(row.message).slice(0, 800), contact: cleanText(row.contact, 160), at,
+    };
+  }
+
+  function addMemberResponse(response) {
+    if (!response) return;
+    if (!memberResponses[response.opportunityId]) memberResponses[response.opportunityId] = [];
+    memberResponses[response.opportunityId].push(response);
+  }
+
+  async function loadMemberOpportunities() {
+    const { data, error } = await account.client.from(OPPORTUNITIES_TABLE).select(OPPORTUNITY_COLUMNS)
+      .order("created_at", { ascending: false }).limit(200);
+    if (error) return false;
+    const rows = (Array.isArray(data) ? data : []).map(memberOpportunityFromRow).filter(Boolean);
+    memberOpportunities.splice(0, memberOpportunities.length, ...rows);
+    return true;
+  }
+
+  async function loadMemberResponses() {
+    for (const key of Object.keys(memberResponses)) delete memberResponses[key];
+    if (!account.user) return true;
+    const { data, error } = await account.client.from(RESPONSES_TABLE).select(RESPONSE_COLUMNS)
+      .order("created_at", { ascending: true }).limit(500);
+    if (error) return false;
+    for (const row of Array.isArray(data) ? data : []) addMemberResponse(memberResponseFromRow(row));
+    return true;
+  }
+
+  async function postMemberOpportunity(record, profile) {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then post.");
+    const { data, error } = await account.client.from(OPPORTUNITIES_TABLE).insert({
+      profile_id: profile.remoteId, type: record.type, title: record.title, summary: record.summary,
+      scope: record.scope, seeking: record.seeking[0] || "", location: record.location,
+    }).select(OPPORTUNITY_COLUMNS).single();
+    if (error && /^Each company can have up to/.test(error.message || "")) {
+      throw new Error(`${profile.name} already has 20 opportunity posts. Remove one to post another.`);
+    }
+    const opportunity = error ? null : memberOpportunityFromRow(data);
+    if (!opportunity) throw new Error("Your opportunity couldn't be posted. Check your connection and try again.");
+    memberOpportunities.unshift(opportunity);
+    return opportunity;
+  }
+
+  async function sendMemberResponse(opportunity, profile, message, contact) {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then respond.");
+    const { data, error } = await account.client.from(RESPONSES_TABLE)
+      .insert({ opportunity_id: opportunity.remoteId, profile_id: profile.remoteId, message, contact })
+      .select(RESPONSE_COLUMNS).single();
+    if (error) {
+      if (/^You can send up to/.test(error.message || "")) throw new Error(error.message);
+      if (error.code === "23503") throw new Error("This opportunity was removed by the company that posted it.");
+      throw new Error("Your response couldn't be sent. Check your connection and try again.");
+    }
+    addMemberResponse(memberResponseFromRow(data));
+  }
+
+  function forgetMemberOpportunities(match) {
+    for (let index = memberOpportunities.length - 1; index >= 0; index -= 1) {
+      if (!match(memberOpportunities[index])) continue;
+      delete memberResponses[memberOpportunities[index].id];
+      memberOpportunities.splice(index, 1);
+    }
+  }
+
+  async function deleteMemberOpportunity(opportunity) {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then remove the post.");
+    const { data, error } = await account.client.from(OPPORTUNITIES_TABLE).delete().eq("id", opportunity.remoteId).select("id");
+    if (error || !Array.isArray(data) || data.length !== 1) throw new Error("This post couldn't be removed. Check your connection and try again.");
+    forgetMemberOpportunities((item) => item.id === opportunity.id);
+  }
+
+  async function moveDraftOpportunities(draft, profile) {
+    for (const record of postedOpportunities.filter((item) => item.companyId === draft.id)) {
+      try {
+        await postMemberOpportunity(record, profile);
+      } catch {
+        continue;
+      }
+      postedOpportunities.splice(postedOpportunities.indexOf(record), 1);
+      delete responsesByOpportunity[record.id];
+    }
+    savePostedOpportunities();
+    writeStoredValue(RESPONSES_KEY, responsesByOpportunity);
+  }
+
   function markOwnMemberProfiles() {
     for (const profile of profiles) if (profile.member) profile.mine = Boolean(account.user && account.ownIds.has(profile.remoteId));
   }
@@ -5380,6 +5639,7 @@
     renderExpoFloor();
     renderFullCompanyProfile();
     renderDashboard();
+    refreshOpportunityLists();
   }
 
   function cleanAuthParams() {
@@ -5418,12 +5678,13 @@
         account.user = next;
         if (!changed) return;
         window.setTimeout(async () => {
-          if (!(await loadOwnProfileIds())) account.ownIds = new Set();
+          const [ownLoaded] = await Promise.all([loadOwnProfileIds(), loadMemberResponses()]);
+          if (!ownLoaded) account.ownIds = new Set();
           markOwnMemberProfiles();
           refreshAccountViews();
         }, 0);
       });
-      await loadMemberProfiles();
+      await Promise.all([loadMemberProfiles(), loadMemberOpportunities(), loadMemberResponses()]);
     } catch {
       account.error = "Sign-in isn't available right now. Refresh the page to try again.";
     }
@@ -5707,6 +5968,8 @@
     }
     const removed = profiles.filter((profile) => profile.member && account.ownIds.has(profile.remoteId));
     for (let index = profiles.length - 1; index >= 0; index -= 1) if (removed.includes(profiles[index])) profiles.splice(index, 1);
+    forgetMemberOpportunities((item) => removed.some((profile) => profile.id === item.companyId));
+    for (const key of Object.keys(memberResponses)) delete memberResponses[key];
     await Promise.all(removed.map((profile) => mediaRequest("readwrite", (store) => store.delete(profile.id)).catch(() => {})));
     await account.client.auth.signOut({ scope: "local" }).catch(() => {});
     account.user = null;
@@ -5800,6 +6063,8 @@
       const { data, error } = await account.client.from(PROFILES_TABLE).delete().eq("id", profile.remoteId).select("id");
       if (error || !Array.isArray(data) || data.length !== 1) throw new Error(failed);
       account.ownIds.delete(profile.remoteId);
+      forgetMemberOpportunities((item) => item.companyId === profile.id);
+      for (const [key, list] of Object.entries(memberResponses)) memberResponses[key] = list.filter((response) => response.from !== profile.id);
     }
     const index = profiles.indexOf(profile);
     if (index >= 0) profiles.splice(index, 1);
@@ -5858,6 +6123,7 @@
         }
         const media = await readProfileMedia(draft);
         if (media.video || media.photos.length) await saveProfileMedia(profile.id, media).catch(() => {});
+        await moveDraftOpportunities(draft, profile);
         remapStoredCompanyId(draft.id, profile.id);
       } catch (error) {
         failure = error.message || "A draft couldn't be moved.";
