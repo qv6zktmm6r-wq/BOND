@@ -32,7 +32,13 @@
   const UPDATES_TABLE = "company_updates";
   const UPDATE_COLUMNS = "id,profile_id,type,text,created_at";
   const FOLLOWS_TABLE = "company_follows";
-  const HIDDEN_TEXT_CHARACTERS = /[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g;
+  const HIDDEN_TEXT_CHARACTERS = /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2069\u3164\uFEFF\uFFA0\uFFF9-\uFFFB\u{E0000}-\u{E007F}]/gu;
+  const LINE_SEPARATORS = /\r\n|[\r\u0085\u2028\u2029]/g;
+  const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B-\u001F\u007F]/g;
+  const EVENTS_TABLE = "company_events";
+  const EVENT_COLUMNS = "id,profile_id,title,format,starts_at,duration_minutes,location,description,capacity,going,created_at";
+  const EVENT_LINKS_TABLE = "company_event_links";
+  const RSVPS_TABLE = "company_event_rsvps";
   const AUTH_STORAGE_KEY = "bond.auth";
   const FLASH_KEY = "bond.flash";
   const MAX_MEMBER_PROFILES = 5;
@@ -368,6 +374,7 @@
   const localFollows = new Set(readStoredIds(FOLLOWS_KEY));
   const followedCompanies = new Set(localFollows);
   const memberUpdates = [];
+  const memberEvents = [];
   const hostedEvents = readHostedEvents();
   const eventRsvps = readRsvps();
   const opportunityRooms = readRooms();
@@ -848,7 +855,7 @@
   }
 
   function allEvents() {
-    return [...hostedEvents, ...sampleEvents].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+    return [...memberEvents, ...hostedEvents, ...sampleEvents].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
   }
 
   function findEvent(id) {
@@ -944,7 +951,7 @@
   }
 
   function eventGoing(event) {
-    return event.going + (eventRsvps[event.id] ? 1 : 0);
+    return event.member ? event.going : event.going + (eventRsvps[event.id] ? 1 : 0);
   }
 
   function eventWhen(event, { long = false } = {}) {
@@ -967,19 +974,39 @@
     downloadCalendar({
       uid: event.id, title: event.title, start: event.start, end: eventEnd(event),
       location: event.format === "online" ? "Online" : event.location,
-      details: `Hosted by ${profile ? profile.name : "a BOND company"} on BOND.\n\n${event.description}${event.link ? `\n\nJoin: ${event.link}` : ""}`,
+      details: `Hosted by ${profile ? profile.name : "a BOND company"} on BOND.\n\n${event.description}${eventJoinLink(event) ? `\n\nJoin: ${eventJoinLink(event)}` : ""}`,
     });
   }
 
   function downloadCalendar({ uid, title, start, end, location, details }) {
     const stamp = (time) => new Date(time).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-    const escape = (value) => String(value || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+    const escape = (value) => String(value || "").replace(LINE_SEPARATORS, "\n").replace(CONTROL_CHARACTERS, "")
+      .replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+    const encoder = new TextEncoder();
+    // Calendar lines are limited to 75 bytes; longer ones continue on lines starting with a space.
+    const fold = (line) => {
+      const parts = [];
+      let part = "";
+      let bytes = 0;
+      for (const character of line) {
+        const size = encoder.encode(character).length;
+        if (bytes + size > (parts.length ? 74 : 75)) {
+          parts.push(part);
+          part = "";
+          bytes = 0;
+        }
+        part += character;
+        bytes += size;
+      }
+      parts.push(part);
+      return parts.join("\r\n ");
+    };
     const lines = [
       "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//BOND//Member events//EN", "CALSCALE:GREGORIAN", "BEGIN:VEVENT",
       `UID:${uid}@joinbond.world`, `DTSTAMP:${stamp(Date.now())}`, `DTSTART:${stamp(start)}`, `DTEND:${stamp(end)}`,
       `SUMMARY:${escape(title)}`, `LOCATION:${escape(location)}`, `DESCRIPTION:${escape(details)}`,
       "END:VEVENT", "END:VCALENDAR",
-    ];
+    ].map(fold);
     const url = URL.createObjectURL(new Blob([`${lines.join("\r\n")}\r\n`], { type: "text/calendar" }));
     const link = element("a");
     link.href = url;
@@ -991,7 +1018,11 @@
   }
 
   function allPosts() {
-    return [...memberUpdates, ...postedUpdates, ...samplePosts].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+    const eventPosts = memberEvents.map((event) => ({
+      id: `post-${event.id}`, type: "event", companyId: event.companyId, eventId: event.id, at: event.at, member: true, announcement: true,
+      text: `We're hosting "${event.title}" on ${eventWhen(event)}. ${eventWhere(event)}.`,
+    }));
+    return [...memberUpdates, ...eventPosts, ...postedUpdates, ...samplePosts].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   }
 
   function shortDate(at) {
@@ -3033,6 +3064,23 @@
     return { label, select, hasOwn: own.length > 0 };
   }
 
+  function memberRsvpPicker(event) {
+    const label = element("label", "", "Attending as");
+    label.htmlFor = `rsvp-company-${event.id}`;
+    const select = element("select");
+    select.id = label.htmlFor;
+    select.name = "company";
+    select.append(new Option("Myself (the host sees \"A BOND member\")", ""));
+    const own = profiles.filter((profile) => profile.member && profile.mine);
+    if (own.length) {
+      const group = element("optgroup");
+      group.label = "Your published companies";
+      own.forEach((profile) => group.append(new Option(profile.name, profile.id)));
+      select.append(group);
+    }
+    return { label, select };
+  }
+
   function createProfileHint(body) {
     const hint = element("p", "form-hint");
     hint.append("No company profile in this browser yet, so you can post as a sample company. ");
@@ -3544,7 +3592,7 @@
     const actions = element("div", "feed-actions");
     const linkedEvent = findEvent(post.eventId);
     if (linkedEvent) {
-      const viewText = linkedEvent.local || eventRsvps[linkedEvent.id] || !eventIsUpcoming(linkedEvent) ? "View event" : "View and RSVP";
+      const viewText = hostingEvent(linkedEvent) || myRsvp(linkedEvent) || !eventIsUpcoming(linkedEvent) ? "View event" : "View and RSVP";
       const viewEvent = element("button", "button button-primary", viewText);
       viewEvent.type = "button";
       viewEvent.setAttribute("aria-label", `${viewText}: ${linkedEvent.title}`);
@@ -3559,7 +3607,7 @@
       openConversation(profile, talk, `Hi ${firstName}, I saw your update: "${snippet}" `);
     });
     if (!isOwn(profile)) actions.append(talk);
-    if (post.local || (post.member && isOwn(profile))) {
+    if (post.local || (post.member && !post.announcement && isOwn(profile))) {
       const remove = element("button", "danger-link", "Remove");
       remove.type = "button";
       remove.addEventListener("click", async () => {
@@ -3755,14 +3803,14 @@
     if (event.format !== "online") main.append(element("p", "event-meta", event.location || "Location shared with attendees"));
     const flags = element("p", "event-meta");
     if (!eventIsUpcoming(event)) flags.append("Ended");
-    else if (event.local) flags.append("Your event · RSVPs from members arrive with BOND accounts");
+    else if (event.local) flags.append("Your event · Saved in this browser, so members can't RSVP");
     else {
       const going = eventGoing(event);
-      flags.append(`${going} going${event.capacity ? ` · ${Math.max(event.capacity - going, 0)} seats left` : ""}`);
-      if (eventRsvps[event.id]) flags.append(element("span", "event-going", "You're going"));
+      flags.append(`${hostingEvent(event) ? "Your event · " : ""}${going} going${event.capacity ? ` · ${Math.max(event.capacity - going, 0)} ${event.capacity - going === 1 ? "seat" : "seats"} left` : ""}`);
+      if (myRsvp(event)) flags.append(element("span", "event-going", "You're going"));
     }
     main.append(flags);
-    const viewText = event.local || eventRsvps[event.id] || !eventIsUpcoming(event) ? "View event" : "View and RSVP";
+    const viewText = hostingEvent(event) || myRsvp(event) || !eventIsUpcoming(event) ? "View event" : "View and RSVP";
     const view = element("button", "button button-secondary", viewText);
     view.type = "button";
     view.setAttribute("aria-label", `${viewText}: ${event.title}`);
@@ -3775,8 +3823,8 @@
   function filteredEvents() {
     return allEvents().filter((event) => eventIsUpcoming(event) && resolveProfile(event.companyId) && (
       currentEventFilter === "All"
-      || (currentEventFilter === "Going" && eventRsvps[event.id])
-      || (currentEventFilter === "Hosting" && event.local)
+      || (currentEventFilter === "Going" && myRsvp(event))
+      || (currentEventFilter === "Hosting" && hostingEvent(event))
       || (currentEventFilter === "online" && event.format !== "in-person")
       || (currentEventFilter === "in-person" && event.format !== "online")));
   }
@@ -3800,7 +3848,7 @@
     });
     const status = document.getElementById("events-status");
     if (status) {
-      const mine = hostedEvents.filter(eventIsUpcoming).length;
+      const mine = upcoming.filter(hostingEvent).length;
       status.textContent = `Showing ${visible.length} of ${upcoming.length} upcoming events.${mine ? ` You're hosting ${mine}.` : ""}`;
     }
   }
@@ -3848,7 +3896,7 @@
 
   function openEvent(event, opener) {
     const profile = resolveProfile(event.companyId);
-    const view = prepareDialog(`${eventFormats[event.format]} event · ${event.local ? "Hosted by you" : "Hosted on BOND"}`, event.title);
+    const view = prepareDialog(`${eventFormats[event.format]} event · ${hostingEvent(event) ? "Hosted by you" : "Hosted on BOND"}`, event.title);
     if (!view || !profile) return;
     const { dialog, body } = view;
     const host = element("div", "opportunity-poster");
@@ -3894,9 +3942,10 @@
       return button;
     };
     const joinLink = () => {
-      if (!event.link || event.format === "in-person") return null;
+      const href = eventJoinLink(event);
+      if (!href || event.format === "in-person") return null;
       const link = element("a", "company-link event-join", "Join link");
-      link.href = event.link;
+      link.href = href;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
       return link;
@@ -3908,7 +3957,7 @@
     }
     if (event.local) {
       container.append(element("h3", "detail-label", "You're hosting this event"));
-      container.append(element("p", "dialog-copy", "It's listed under Upcoming events, on your company profile, and in the activity feed, so followers see it on their dashboards. RSVPs from other members arrive once BOND launches accounts; this preview can't receive them from other people's browsers."));
+      container.append(element("p", "dialog-copy", "It's listed under Upcoming events, on your company profile, and in the activity feed, so followers see it on their dashboards. It's saved in this browser, so other members can't RSVP. Publish the hosting company to your account to take RSVPs."));
       actions.append(calendar());
       const link = joinLink();
       if (link) actions.append(link);
@@ -3928,26 +3977,93 @@
       container.append(actions);
       return;
     }
-    const mine = eventRsvps[event.id];
+    const status = element("p", "chat-status");
+    status.setAttribute("role", "status");
+    const rerender = (message) => {
+      refreshEvents();
+      renderEventRsvp(event, container);
+      container.querySelector("button")?.focus();
+      announce(message);
+    };
+    if (event.member && hostingEvent(event)) {
+      const attendees = eventAttendees(event);
+      container.append(element("h3", "detail-label", "You're hosting this event"));
+      container.append(element("p", "dialog-copy", "Everyone on BOND can see it under Upcoming events, on your company profile, and in the activity feed. Only you and the people who RSVP see the join link."));
+      const list = element("ul", "event-attendees");
+      list.setAttribute("aria-label", "RSVPs");
+      for (const row of attendees) {
+        const company = resolveProfile(row.from);
+        list.append(element("li", "", `${company ? company.name : "A BOND member"} · RSVP'd ${shortDate(row.at)}`));
+      }
+      container.append(element("p", "form-hint", attendees.length
+        ? `${attendees.length} ${attendees.length === 1 ? "RSVP" : "RSVPs"}. Members attending as themselves are shown as "A BOND member".`
+        : "No RSVPs yet."));
+      if (attendees.length) container.append(list);
+      if (!container.dataset.attendeesLoaded) {
+        container.dataset.attendeesLoaded = "yes";
+        loadEventAttendees(event).then((loaded) => {
+          if (loaded && container.isConnected) renderEventRsvp(event, container);
+        });
+      }
+      actions.append(calendar());
+      const link = joinLink();
+      if (link) actions.append(link);
+      const cancel = element("button", "danger-link", "Cancel this event");
+      cancel.type = "button";
+      cancel.addEventListener("click", async () => {
+        if (cancel.dataset.confirm !== "yes") {
+          cancel.dataset.confirm = "yes";
+          cancel.textContent = attendees.length ? "Tap again to cancel the event and its RSVPs" : "Tap again to cancel the event";
+          return;
+        }
+        cancel.disabled = true;
+        try {
+          await cancelMemberEvent(event);
+        } catch (error) {
+          cancel.disabled = false;
+          status.textContent = error.message;
+          return;
+        }
+        refreshEvents();
+        document.getElementById("company-dialog")?.close();
+        announce("Your event was cancelled and removed.");
+      });
+      actions.append(cancel);
+      container.append(actions, status);
+      return;
+    }
+    const mine = myRsvp(event);
     if (mine) {
       const as = resolveProfile(mine.from);
+      const host = resolveProfile(event.companyId);
       container.append(element("h3", "detail-label", "You're going"));
-      container.append(element("p", "dialog-copy", `RSVP'd ${shortDate(mine.at)}${as ? ` as ${as.name}` : ""}. Saved in this browser; the host gets your RSVP once BOND launches accounts.`));
+      container.append(element("p", "dialog-copy", event.member
+        ? `RSVP'd ${shortDate(mine.at)}${as ? ` as ${as.name}` : ""}. ${host ? host.name : "The host"} can see ${as ? "that your company is coming" : "an RSVP from a BOND member"}.`
+        : `RSVP'd ${shortDate(mine.at)}${as ? ` as ${as.name}` : ""}. Saved in this browser; sample events can't receive RSVPs.`));
       actions.append(calendar());
       const link = joinLink();
       if (link) actions.append(link);
       const cancel = element("button", "danger-link", "Cancel my RSVP");
       cancel.type = "button";
-      cancel.addEventListener("click", () => {
-        delete eventRsvps[event.id];
-        saveRsvps();
-        refreshEvents();
-        renderEventRsvp(event, container);
-        container.querySelector("button")?.focus();
-        announce("Your RSVP was cancelled.");
+      cancel.addEventListener("click", async () => {
+        if (event.member) {
+          cancel.disabled = true;
+          try {
+            await cancelMemberRsvp(event);
+          } catch (error) {
+            cancel.disabled = !memberEvents.includes(event);
+            status.textContent = error.message;
+            if (cancel.disabled) refreshEvents();
+            return;
+          }
+        } else {
+          delete eventRsvps[event.id];
+          saveRsvps();
+        }
+        rerender("Your RSVP was cancelled.");
       });
       actions.append(cancel);
-      container.append(actions);
+      container.append(actions, status);
       return;
     }
     if (event.capacity && eventGoing(event) >= event.capacity) {
@@ -3955,13 +4071,39 @@
       return;
     }
     container.append(element("h3", "detail-label", "Save your spot"));
+    if (event.member && !account.user) {
+      const signIn = element("button", "button button-primary", "Sign in to RSVP");
+      signIn.type = "button";
+      signIn.addEventListener("click", () => openAccount(signIn));
+      container.append(element("p", "form-hint", "Sign in to RSVP. The host sees your company name if you attend as a company, and never your email address."), signIn);
+      return;
+    }
     const form = element("form", "chat-form");
-    const picker = companyPicker(`rsvp-company-${event.id}`, "Attending as", { includeNone: true });
+    const picker = event.member
+      ? memberRsvpPicker(event)
+      : companyPicker(`rsvp-company-${event.id}`, "Attending as", { includeNone: true });
     const submit = element("button", "button button-primary", "RSVP: I'll be there");
     submit.type = "submit";
-    form.append(picker.label, picker.select, submit);
-    form.addEventListener("submit", (submitEvent) => {
+    form.append(picker.label, picker.select, submit, status);
+    form.addEventListener("submit", async (submitEvent) => {
       submitEvent.preventDefault();
+      if (submit.disabled) return;
+      if (event.member) {
+        const as = resolveProfile(picker.select.value);
+        submit.disabled = true;
+        status.textContent = "Saving your RSVP…";
+        try {
+          await rsvpMemberEvent(event, as?.member && as.mine ? as : null);
+        } catch (error) {
+          if (/cancelled by its host/.test(error.message)) forgetMemberEvents((item) => item.id === event.id);
+          submit.disabled = !memberEvents.includes(event);
+          status.textContent = error.message;
+          if (submit.disabled) refreshEvents();
+          return;
+        }
+        rerender(`You're going. ${resolveProfile(event.companyId)?.name || "The host"} can see your RSVP.`);
+        return;
+      }
       eventRsvps[event.id] = { from: knownProfileId(picker.select.value) ? picker.select.value : "", at: new Date().toISOString() };
       const persisted = saveRsvps();
       refreshEvents();
@@ -3984,6 +4126,7 @@
     const form = element("form", "opportunity-form event-form");
     const picker = companyPicker("event-company", "Hosted by", { selected: companyId });
     if (!picker.hasOwn) createProfileHint(body);
+    if (ACCOUNTS_ENABLED) body.append(element("p", "form-hint", "Events from your published companies are visible to everyone on BOND, and members can RSVP. Events from browser drafts and sample companies stay in this browser."));
     const field = (tag, id, labelText, attributes = {}) => {
       const label = element("label", "", labelText);
       label.htmlFor = id;
@@ -4038,8 +4181,9 @@
     format.addEventListener("change", syncFormat);
     format.value = "in-person";
     syncFormat();
-    form.addEventListener("submit", (submitEvent) => {
+    form.addEventListener("submit", async (submitEvent) => {
       submitEvent.preventDefault();
+      if (submit.disabled) return;
       const fail = (message, input) => {
         status.textContent = message;
         input.focus();
@@ -4065,6 +4209,29 @@
         duration: eventDurations.includes(Number(duration.value)) ? Number(duration.value) : 60,
         location: where, link: joinUrl, description: details, capacity: seats, going: 0, at: new Date().toISOString(), local: true,
       };
+      const hostProfile = resolveProfile(host);
+      if (hostProfile?.member) {
+        const visible = (value) => value.replace(HIDDEN_TEXT_CHARACTERS, "").replace(LINE_SEPARATORS, "\n").replace(/\t/g, " ").replace(CONTROL_CHARACTERS, "").trim();
+        const oneLine = (value) => visible(value).replace(/\s+/g, " ");
+        Object.assign(record, { title: oneLine(record.title), location: oneLine(record.location), description: visible(record.description) });
+        if (!record.title) return fail("Give your event a name.", title);
+        if (!record.description) return fail("Describe what will happen at the event.", description);
+        submit.disabled = true;
+        status.textContent = "Scheduling…";
+        let hosted;
+        try {
+          hosted = await hostMemberEvent(record, hostProfile);
+        } catch (error) {
+          submit.disabled = false;
+          status.textContent = error.message;
+          return;
+        }
+        currentEventFilter = "All";
+        refreshEvents();
+        openEvent(hosted, opener);
+        announce("Your event is scheduled. Everyone on BOND can see it and RSVP.");
+        return;
+      }
       hostedEvents.push(record);
       const persisted = saveHostedEvents();
       postedUpdates.unshift({
@@ -5090,9 +5257,9 @@
     const postedByYou = allOpportunities().filter((opportunity) => postedByMe(opportunity) && resolveProfile(opportunity.companyId));
     const responded = allOpportunities().filter((opportunity) => !postedByMe(opportunity) && opportunityResponses(opportunity).length && resolveProfile(opportunity.companyId));
     const responsesSent = responded.reduce((total, opportunity) => total + opportunityResponses(opportunity).length, 0);
-    const hosting = allEvents().filter((event) => event.local && resolveProfile(event.companyId));
+    const hosting = allEvents().filter((event) => hostingEvent(event) && resolveProfile(event.companyId));
     const hostingUpcoming = hosting.filter(eventIsUpcoming);
-    const attending = allEvents().filter((event) => eventRsvps[event.id] && eventIsUpcoming(event) && resolveProfile(event.companyId));
+    const attending = allEvents().filter((event) => myRsvp(event) && eventIsUpcoming(event) && resolveProfile(event.companyId));
 
     const head = element("header", "dashboard-head");
     head.append(element("p", "dialog-kicker", "Your BOND"), element("h1", "", "Your dashboard"));
@@ -5244,12 +5411,15 @@
       const list = element("ul", "dashboard-list");
       for (const event of hosting) {
         const host = resolveProfile(event.companyId);
+        const going = event.member ? ` · ${eventGoing(event)} going` : "";
         list.append(dashboardItemRow(event.title,
-          `${host.name} · ${eventWhen(event)} · ${eventWhere(event)}${eventIsUpcoming(event) ? "" : " · Ended"}`,
+          `${host.name} · ${eventWhen(event)} · ${eventWhere(event)}${going}${eventIsUpcoming(event) ? "" : " · Ended"}`,
           viewEventButton(event, `hosting-${event.id}`)));
       }
       hostingBlock.append(list);
-      hostingBlock.append(element("p", "form-hint", "RSVPs from other members will appear here once BOND launches accounts. This preview can't receive RSVPs from other people's browsers."));
+      hostingBlock.append(element("p", "form-hint", hosting.some((event) => event.local)
+        ? "Open an event to see who RSVP'd. Events from browser drafts stay in this browser, so members can't RSVP to them."
+        : "Open an event to see who RSVP'd."));
     } else {
       dashboardEmpty(hostingBlock, "You haven't scheduled an event yet.",
         dashboardButton("Host an event", "button button-primary", "host-any", (button) => openHostEvent(button, own[0]?.id || "")));
@@ -5267,7 +5437,7 @@
     }
     eventList.append(dashboardItemRow("Nova Logistics Spotlight premiere, then live Q&A", "Live expos · Main stage · Sample event",
       dashboardLink("Go to the expo", "expos.html", "button button-secondary")));
-    const followedUpcoming = allEvents().filter((event) => !event.local && !eventRsvps[event.id] && eventIsUpcoming(event) && followedCompanies.has(event.companyId));
+    const followedUpcoming = allEvents().filter((event) => !hostingEvent(event) && !myRsvp(event) && eventIsUpcoming(event) && followedCompanies.has(event.companyId));
     for (const event of followedUpcoming) {
       const host = resolveProfile(event.companyId);
       if (!host) continue;
@@ -5484,7 +5654,9 @@
     form.elements.namedItem("company")?.focus();
   }
 
-  const account = { client: null, user: null, ownIds: new Set(), follows: new Set(), loaded: false, error: "" };
+  const account = {
+    client: null, user: null, ownIds: new Set(), follows: new Set(), rsvpRows: [], eventLinks: Object.create(null), loaded: false, error: "",
+  };
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -5841,6 +6013,192 @@
     throw new Error(`${following ? "Following" : "Unfollowing"} ${profile.name} didn't save. Check your connection and try again.`);
   }
 
+  function memberEventFromRow(row) {
+    if (!row || typeof row !== "object" || typeof row.id !== "string" || typeof row.profile_id !== "string") return null;
+    const title = cleanText(row.title, 100);
+    const description = cleanMessage(row.description).slice(0, 800);
+    const start = storedTime(row.starts_at);
+    const at = storedTime(row.created_at);
+    if (!eventFormats[row.format] || !eventDurations.includes(row.duration_minutes) || !title || !description || !start || !at) return null;
+    return {
+      id: `me-${row.id}`, remoteId: row.id, member: true, companyId: `m-${row.profile_id}`, title, format: row.format, start,
+      duration: row.duration_minutes, location: row.format === "online" ? "" : cleanText(row.location, 120), description,
+      capacity: Number.isInteger(row.capacity) && row.capacity > 0 ? row.capacity : 0,
+      going: Number.isInteger(row.going) && row.going > 0 ? row.going : 0, at,
+    };
+  }
+
+  function placeMemberEvent(event) {
+    const index = memberEvents.findIndex((item) => item.id === event.id);
+    if (index === -1) memberEvents.push(event);
+    else memberEvents[index] = event;
+  }
+
+  async function loadMemberEvents() {
+    const pageId = document.getElementById("full-company-profile") ? new URLSearchParams(window.location.search).get("id") || "" : "";
+    const since = new Date(Date.now() - (Math.max(...eventDurations) + 60) * 60 * 1000).toISOString();
+    const events = () => account.client.from(EVENTS_TABLE).select(EVENT_COLUMNS).gte("starts_at", since).order("starts_at", { ascending: true });
+    const [list, page] = await Promise.all([
+      events().limit(300),
+      MEMBER_ID_PATTERN.test(pageId) ? events().eq("profile_id", pageId.slice(2)).limit(40) : null,
+    ]);
+    if (list.error) return false;
+    memberEvents.splice(0, memberEvents.length);
+    for (const row of [...(list.data || []), ...(page && !page.error && Array.isArray(page.data) ? page.data : [])]) {
+      const event = memberEventFromRow(row);
+      if (event) placeMemberEvent(event);
+    }
+    return true;
+  }
+
+  function memberRsvpFromRow(row) {
+    if (!row || typeof row.event_id !== "string") return null;
+    const at = storedTime(row.created_at);
+    if (!at) return null;
+    return { eventId: `me-${row.event_id}`, from: typeof row.profile_id === "string" ? `m-${row.profile_id}` : "", at };
+  }
+
+  // Rows are the caller's own RSVPs plus, for events their companies host, everyone's RSVPs to them.
+  async function loadMemberRsvps() {
+    account.rsvpRows = [];
+    account.eventLinks = Object.create(null);
+    if (!account.user) return true;
+    const [rsvps, links] = await Promise.all([
+      account.client.from(RSVPS_TABLE).select("event_id,profile_id,created_at").order("created_at", { ascending: true }).limit(2000),
+      account.client.from(EVENT_LINKS_TABLE).select("event_id,link").limit(1000),
+    ]);
+    if (!rsvps.error) account.rsvpRows = (rsvps.data || []).map(memberRsvpFromRow).filter(Boolean);
+    if (!links.error) {
+      for (const row of links.data || []) {
+        const link = normalizeEventLink(row.link);
+        if (typeof row.event_id === "string" && link) account.eventLinks[`me-${row.event_id}`] = link;
+      }
+    }
+    return !rsvps.error && !links.error;
+  }
+
+  function hostingEvent(event) {
+    if (event.local) return true;
+    return Boolean(event.member && isOwn(resolveProfile(event.companyId)));
+  }
+
+  function myRsvp(event) {
+    if (!event.member) return eventRsvps[event.id] || null;
+    if (hostingEvent(event)) return null;
+    return account.rsvpRows.find((row) => row.eventId === event.id) || null;
+  }
+
+  function eventAttendees(event) {
+    return hostingEvent(event) ? account.rsvpRows.filter((row) => row.eventId === event.id) : [];
+  }
+
+  function eventJoinLink(event) {
+    return event.member ? account.eventLinks[event.id] || "" : event.link;
+  }
+
+  async function refreshMemberEvent(event) {
+    const [row, link] = await Promise.all([
+      account.client.from(EVENTS_TABLE).select(EVENT_COLUMNS).eq("id", event.remoteId).maybeSingle(),
+      account.user && event.format !== "in-person"
+        ? account.client.from(EVENT_LINKS_TABLE).select("link").eq("event_id", event.remoteId).maybeSingle() : null,
+    ]);
+    if (!row.error && !row.data) {
+      forgetMemberEvents((item) => item.id === event.id);
+      return false;
+    }
+    const fresh = row.error ? null : memberEventFromRow(row.data);
+    if (fresh) Object.assign(event, { going: fresh.going, capacity: fresh.capacity });
+    const joinUrl = link && !link.error ? normalizeEventLink(link.data?.link) : "";
+    if (joinUrl) account.eventLinks[event.id] = joinUrl;
+    else if (link && !link.error) delete account.eventLinks[event.id];
+    return true;
+  }
+
+  async function loadEventAttendees(event) {
+    const { data, error } = await account.client.from(RSVPS_TABLE).select("event_id,profile_id,created_at")
+      .eq("event_id", event.remoteId).order("created_at", { ascending: true }).limit(5000);
+    if (error) return false;
+    account.rsvpRows = account.rsvpRows.filter((row) => row.eventId !== event.id).concat((data || []).map(memberRsvpFromRow).filter(Boolean));
+    return true;
+  }
+
+  async function hostMemberEvent(record, profile) {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then host the event.");
+    const { data, error } = await account.client.from(EVENTS_TABLE).insert({
+      profile_id: profile.remoteId, title: record.title, format: record.format, starts_at: record.start,
+      duration_minutes: record.duration, location: record.location, description: record.description, capacity: record.capacity,
+    }).select(EVENT_COLUMNS).single();
+    if (error && /^(Each company can have up to|You can schedule up to|Pick a start time)/.test(error.message || "")) {
+      throw new Error(/a day\.$/.test(error.message) ? `${error.message} Try again tomorrow.` : error.message);
+    }
+    const event = error ? null : memberEventFromRow(data);
+    if (!event) throw new Error("Your event couldn't be scheduled. Check your connection and try again.");
+    if (record.link) {
+      const { error: linkError } = await account.client.from(EVENT_LINKS_TABLE).insert({ event_id: event.remoteId, link: record.link });
+      if (linkError) {
+        await account.client.from(EVENTS_TABLE).delete().eq("id", event.remoteId);
+        throw new Error("The join link couldn't be saved. Check it starts with https:// and try again.");
+      }
+      account.eventLinks[event.id] = record.link;
+    }
+    placeMemberEvent(event);
+    return event;
+  }
+
+  function forgetMemberEvents(match) {
+    for (let index = memberEvents.length - 1; index >= 0; index -= 1) {
+      const event = memberEvents[index];
+      if (!match(event)) continue;
+      account.rsvpRows = account.rsvpRows.filter((row) => row.eventId !== event.id);
+      delete account.eventLinks[event.id];
+      memberEvents.splice(index, 1);
+    }
+  }
+
+  async function cancelMemberEvent(event) {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then cancel the event.");
+    const { data, error } = await account.client.from(EVENTS_TABLE).delete().eq("id", event.remoteId).select("id");
+    if (error || !Array.isArray(data) || data.length !== 1) throw new Error("This event couldn't be cancelled. Check your connection and try again.");
+    forgetMemberEvents((item) => item.id === event.id);
+  }
+
+  async function rsvpMemberEvent(event, profile) {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then RSVP.");
+    // Insert without returning the row: user_id is not readable, so a representation request is refused.
+    const { error } = await account.client.from(RSVPS_TABLE)
+      .insert({ event_id: event.remoteId, profile_id: profile ? profile.remoteId : null });
+    if (error && error.code !== "23505") {
+      if (/^(This event is full|This event has ended|You can RSVP to up to)/.test(error.message || "")) throw new Error(error.message);
+      if (error.code === "23503" || /cancelled/.test(error.message || "")) throw new Error("This event was cancelled by its host.");
+      throw new Error("Your RSVP didn't go through. Check your connection and try again.");
+    }
+    await loadMemberRsvps();
+    await refreshMemberEvent(event);
+  }
+
+  async function cancelMemberRsvp(event) {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then cancel your RSVP.");
+    const { count, error } = await account.client.from(RSVPS_TABLE).delete({ count: "exact" }).eq("event_id", event.remoteId);
+    if (error || typeof count !== "number") throw new Error("Your RSVP couldn't be cancelled. Check your connection and try again.");
+    account.rsvpRows = account.rsvpRows.filter((row) => row.eventId !== event.id);
+    delete account.eventLinks[event.id];
+    if (!(await refreshMemberEvent(event))) throw new Error("This event was cancelled by its host.");
+  }
+
+  async function moveDraftEvents(draft, profile) {
+    for (const record of hostedEvents.filter((event) => event.companyId === draft.id && Date.parse(event.start) > Date.now())) {
+      try {
+        await hostMemberEvent(record, profile);
+      } catch {
+        continue;
+      }
+      hostedEvents.splice(hostedEvents.indexOf(record), 1);
+      for (let index = postedUpdates.length - 1; index >= 0; index -= 1) if (postedUpdates[index].eventId === record.id) postedUpdates.splice(index, 1);
+    }
+    saveHostedEvents();
+    savePostedUpdates();
+  }
+
   function markOwnMemberProfiles() {
     for (const profile of profiles) if (profile.member) profile.mine = Boolean(account.user && account.ownIds.has(profile.remoteId));
   }
@@ -5852,7 +6210,7 @@
     renderFullCompanyProfile();
     renderDashboard();
     refreshOpportunityLists();
-    refreshFeeds();
+    refreshEvents();
     document.querySelectorAll("[data-follow-company]").forEach(paintFollowButton);
   }
 
@@ -5892,13 +6250,16 @@
         account.user = next;
         if (!changed) return;
         window.setTimeout(async () => {
-          const [ownLoaded] = await Promise.all([loadOwnProfileIds(), loadMemberResponses(), loadMemberFollows()]);
+          const [ownLoaded] = await Promise.all([loadOwnProfileIds(), loadMemberResponses(), loadMemberFollows(), loadMemberRsvps()]);
           if (!ownLoaded) account.ownIds = new Set();
           markOwnMemberProfiles();
           refreshAccountViews();
         }, 0);
       });
-      await Promise.all([loadMemberProfiles(), loadMemberOpportunities(), loadMemberResponses(), loadMemberUpdates(), loadMemberFollows()]);
+      await Promise.all([
+        loadMemberProfiles(), loadMemberOpportunities(), loadMemberResponses(), loadMemberUpdates(), loadMemberFollows(),
+        loadMemberEvents(), loadMemberRsvps(),
+      ]);
     } catch {
       account.error = "Sign-in isn't available right now. Refresh the page to try again.";
     }
@@ -6178,6 +6539,9 @@
     for (let index = profiles.length - 1; index >= 0; index -= 1) if (removed.includes(profiles[index])) profiles.splice(index, 1);
     forgetMemberOpportunities((item) => removed.some((profile) => profile.id === item.companyId));
     forgetMemberUpdates((item) => removed.some((profile) => profile.id === item.companyId));
+    forgetMemberEvents((item) => removed.some((profile) => profile.id === item.companyId));
+    account.rsvpRows = [];
+    account.eventLinks = Object.create(null);
     for (const key of Object.keys(memberResponses)) delete memberResponses[key];
     account.follows = new Set();
     for (const id of [...localFollows]) if (id.startsWith("m-")) localFollows.delete(id);
@@ -6278,6 +6642,8 @@
       account.ownIds.delete(profile.remoteId);
       forgetMemberOpportunities((item) => item.companyId === profile.id);
       forgetMemberUpdates((item) => item.companyId === profile.id);
+      forgetMemberEvents((item) => item.companyId === profile.id);
+      account.rsvpRows = account.rsvpRows.filter((row) => row.from !== profile.id);
       for (const [key, list] of Object.entries(memberResponses)) memberResponses[key] = list.filter((response) => response.from !== profile.id);
     }
     const index = profiles.indexOf(profile);
@@ -6339,6 +6705,7 @@
         if (media.video || media.photos.length) await saveProfileMedia(profile.id, media).catch(() => {});
         await moveDraftOpportunities(draft, profile);
         await moveDraftUpdates(draft, profile);
+        await moveDraftEvents(draft, profile);
         remapStoredCompanyId(draft.id, profile.id);
       } catch (error) {
         failure = error.message || "A draft couldn't be moved.";

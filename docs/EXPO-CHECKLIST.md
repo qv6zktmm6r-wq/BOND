@@ -111,7 +111,8 @@ Companies host their own demos, workshops, open houses, and Q&As. Free reach onl
 - [x] RSVP, attending as yourself or one of your companies; cancel the RSVP; seats left; full events closed
 - [x] Add to calendar (downloads a calendar file)
 - [x] Hosts can cancel an event, which also removes its feed post
-- [ ] RSVPs reaching the host, attendee lists, and reminders (needs accounts and a database)
+- [x] Events from published companies saved to the database and visible to everyone; signed-in members RSVP, the host sees the attendee list (company name or "A BOND member", never an email), and only the host and attendees see the join link
+- [ ] Event reminders by email (shares the sign-in email quota; owner decision on the email plan)
 - [ ] Paid promotion or featured placement (owner decision on pricing)
 
 ## Flagship: AI Opportunity Rooms
@@ -141,7 +142,7 @@ Working in the preview: rooms are saved in the visitor's browser, the project re
 - [x] Delete-my-account option (Account dialog, confirmed by typing your email) that also removes the account's company profiles and their logo and cover files from storage
 - [x] Profile owners are private: visitors can't tell which company profiles share one account; only the signed-in owner sees which profiles are theirs
 - [ ] Representative sign-in and roles (several people managing one company)
-- [~] Database for profiles, Opportunity Board posts and responses, company updates, and follows (done); messages, meetings, events, and RSVPs are still in the browser
+- [~] Database for profiles, Opportunity Board posts and responses, company updates, follows, events, and RSVPs (done); messages and meetings are still in the browser
 - [ ] Business claiming and verification; certification verification (VOSB/SDVOSB and others)
 - [ ] Video hosting and live streaming (cost to scope)
 - [ ] AI provider for matchmaking and Opportunity Rooms (cost to scope)
