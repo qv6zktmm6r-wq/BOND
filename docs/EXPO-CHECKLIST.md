@@ -79,7 +79,8 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 - [x] Companies post their own requests ("Looking for a website developer", "Seeking a logistics partner", "Need a certified subcontractor"): type, headline, description, who could help, requirements, and location; saved in the browser, with a remove option
 - [x] Respond to or express interest in a request, as one of your companies or just yourself, with an optional message (voice typing available)
 - [x] Opportunities linked to the posting company's profile (new Opportunities section on every profile) and to "Companies that could fit"
-- [ ] Posts and responses visible to everyone and delivered to the posting company (needs accounts and a database)
+- [x] Posts from published companies visible to everyone; responses delivered privately to the posting company (with an optional reply contact) and listed on both dashboards
+- [ ] Email notification when a post gets a response
 
 ## 6. Company Activity Feed
 
@@ -139,7 +140,7 @@ Working in the preview: rooms are saved in the visitor's browser, the project re
 - [x] Delete-my-account option (Account dialog, confirmed by typing your email) that also removes the account's company profiles and their logo and cover files from storage
 - [x] Profile owners are private: visitors can't tell which company profiles share one account; only the signed-in owner sees which profiles are theirs
 - [ ] Representative sign-in and roles (several people managing one company)
-- [~] Database for profiles (done on `feature/accounts`), messages, meetings, opportunities, and follows (still in the browser)
+- [~] Database for profiles and Opportunity Board posts and responses (done); messages, meetings, and follows are still in the browser
 - [ ] Business claiming and verification; certification verification (VOSB/SDVOSB and others)
 - [ ] Video hosting and live streaming (cost to scope)
 - [ ] AI provider for matchmaking and Opportunity Rooms (cost to scope)

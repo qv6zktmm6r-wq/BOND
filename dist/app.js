@@ -3390,7 +3390,7 @@
     for (const [value, text] of Object.entries(opportunityTypes)) type.append(new Option(text, value));
     type.value = "Service";
     form.append(typeLabel, type);
-    const title = field("input", "opportunity-title", "Headline", { maxLength: 100, required: true, placeholder: "Looking for a website developer" });
+    const title = field("input", "opportunity-headline", "Headline", { maxLength: 100, required: true, placeholder: "Looking for a website developer" });
     const summary = field("textarea", "opportunity-summary", "What do you need?", { rows: 4, maxLength: 600, required: true, placeholder: "The work, the timeline, and what a good partner looks like." });
     const seekingLabel = element("label", "", "Who could help? (optional)");
     seekingLabel.htmlFor = "opportunity-seeking";
