@@ -32,9 +32,10 @@
   const UPDATES_TABLE = "company_updates";
   const UPDATE_COLUMNS = "id,profile_id,type,text,created_at";
   const FOLLOWS_TABLE = "company_follows";
-  const HIDDEN_TEXT_CHARACTERS = /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2069\u3164\uFEFF\uFFA0\uFFF9-\uFFFB\u{E0000}-\u{E007F}]/gu;
+  const HIDDEN_TEXT_CHARACTERS = /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2069\u3164\uFEFF\uFFA0\uFFF9-\uFFFB\u{1D173}-\u{1D17A}\u{E0000}-\u{E007F}]/gu;
   const LINE_SEPARATORS = /\r\n|[\r\u0085\u2028\u2029]/g;
-  const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B-\u001F\u007F]/g;
+  const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
+  const TEXT_REJECTED = "Some of the text uses characters BOND can't publish. Use letters, numbers, and punctuation, then try again.";
   const EVENTS_TABLE = "company_events";
   const EVENT_COLUMNS = "id,profile_id,title,format,starts_at,duration_minutes,location,description,capacity,going,created_at";
   const EVENT_LINKS_TABLE = "company_event_links";
@@ -699,6 +700,12 @@
   function readStoredIds(key) {
     const value = readStoredValue(key);
     return Array.isArray(value) ? value.filter(knownProfileId) : [];
+  }
+
+  function plainText(value, multiline = false) {
+    const text = String(value || "").replace(HIDDEN_TEXT_CHARACTERS, "").replace(LINE_SEPARATORS, "\n").replace(/\t/g, " ").replace(CONTROL_CHARACTERS, "");
+    const result = (multiline ? text : text.replace(/\s+/g, " ")).trim();
+    return /[^\s\u2800]/.test(result) ? result : "";
   }
 
   function cleanMessage(value) {
@@ -4214,10 +4221,9 @@
       };
       const hostProfile = resolveProfile(host);
       if (hostProfile?.member) {
-        const visible = (value) => value.replace(HIDDEN_TEXT_CHARACTERS, "").replace(LINE_SEPARATORS, "\n").replace(/\t/g, " ").replace(CONTROL_CHARACTERS, "").trim();
-        const oneLine = (value) => visible(value).replace(/\s+/g, " ");
-        Object.assign(record, { title: oneLine(record.title), location: oneLine(record.location), description: visible(record.description) });
+        Object.assign(record, { title: plainText(record.title), location: plainText(record.location), description: plainText(record.description, true) });
         if (!record.title) return fail("Give your event a name.", title);
+        if (record.format !== "online" && !record.location) return fail("Add an address or city for in-person and hybrid events.", location);
         if (!record.description) return fail("Describe what will happen at the event.", description);
         submit.disabled = true;
         status.textContent = "Scheduling…";
@@ -5862,14 +5868,18 @@
 
   async function postMemberOpportunity(record, profile) {
     if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then post.");
+    const title = plainText(record.title);
+    const summary = plainText(record.summary, true);
+    if (!title || !summary) throw new Error("Add a headline and details using letters or numbers.");
     const { data, error } = await account.client.from(OPPORTUNITIES_TABLE).insert({
-      profile_id: profile.remoteId, type: record.type, title: record.title, summary: record.summary,
-      scope: record.scope, seeking: record.seeking[0] || "", location: record.location,
+      profile_id: profile.remoteId, type: record.type, title, summary,
+      scope: record.scope.map((item) => plainText(item)).filter(Boolean), seeking: record.seeking[0] || "", location: plainText(record.location),
     }).select(OPPORTUNITY_COLUMNS).single();
     if (error && /^Each company can have up to/.test(error.message || "")) {
       throw new Error(`${profile.name} already has 20 opportunity posts. Remove one to post another.`);
     }
     if (error && /^You can post up to/.test(error.message || "")) throw new Error(`${error.message} Try again tomorrow.`);
+    if (error?.code === "23514") throw new Error(TEXT_REJECTED);
     const opportunity = error ? null : memberOpportunityFromRow(data);
     if (!opportunity) throw new Error("Your opportunity couldn't be posted. Check your connection and try again.");
     memberOpportunities.unshift(opportunity);
@@ -5879,11 +5889,12 @@
   async function sendMemberResponse(opportunity, profile, message, contact) {
     if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then respond.");
     const { data, error } = await account.client.from(RESPONSES_TABLE)
-      .insert({ opportunity_id: opportunity.remoteId, profile_id: profile.remoteId, message, contact })
+      .insert({ opportunity_id: opportunity.remoteId, profile_id: profile.remoteId, message: plainText(message, true), contact: plainText(contact) })
       .select(RESPONSE_COLUMNS).single();
     if (error) {
       if (/^You can send up to/.test(error.message || "")) throw new Error(error.message);
       if (error.code === "23503") throw new Error("This opportunity was removed by the company that posted it.");
+      if (error.code === "23514") throw new Error(TEXT_REJECTED);
       throw new Error("Your response couldn't be sent. Check your connection and try again.");
     }
     addMemberResponse(memberResponseFromRow(data));
@@ -5961,12 +5972,15 @@
 
   async function postMemberUpdate(type, text, profile) {
     if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then share.");
+    const visible = plainText(text, true);
+    if (!visible) throw new Error("Write your update using letters or numbers.");
     const { data, error } = await account.client.from(UPDATES_TABLE)
-      .insert({ profile_id: profile.remoteId, type, text }).select(UPDATE_COLUMNS).single();
+      .insert({ profile_id: profile.remoteId, type, text: visible }).select(UPDATE_COLUMNS).single();
     if (error && /^Each company can have up to/.test(error.message || "")) {
       throw new Error(`${profile.name} already has 100 updates. Remove an older one to share another.`);
     }
     if (error && /^You can share up to/.test(error.message || "")) throw new Error(`${error.message} Try again tomorrow.`);
+    if (error?.code === "23514") throw new Error(TEXT_REJECTED);
     const update = error ? null : memberUpdateFromRow(data);
     if (!update) throw new Error("Your update couldn't be shared. Check your connection and try again.");
     memberUpdates.unshift(update);
@@ -6147,6 +6161,7 @@
     if (error && /^(Each company can have up to|You can schedule up to|Pick a start time)/.test(error.message || "")) {
       throw new Error(/a day\.$/.test(error.message) ? `${error.message} Try again tomorrow.` : error.message);
     }
+    if (error?.code === "23514") throw new Error(TEXT_REJECTED);
     const event = error ? null : memberEventFromRow(data);
     if (!event) throw new Error("Your event couldn't be scheduled. Check your connection and try again.");
     if (record.link) {
@@ -6626,16 +6641,17 @@
   }
 
   function memberRow(details) {
+    const list = (items) => (items || []).map((item) => plainText(item)).filter(Boolean);
     return {
-      name: details.name, industry: details.category, description: details.description,
-      location: details.location === "Location not added" ? "" : details.location,
-      tagline: details.tagline || "", story: details.story || "",
-      services: details.services, certifications: details.certifications || [], projects: (details.projects || []).map((project) => project.title),
-      service_area: details.serviceArea || "", company_size: details.size || "", ownership: details.ownership,
-      representative: details.representative || "", website: details.website || "",
+      name: plainText(details.name), industry: details.category, description: plainText(details.description, true),
+      location: details.location === "Location not added" ? "" : plainText(details.location),
+      tagline: plainText(details.tagline), story: plainText(details.story, true),
+      services: list(details.services), certifications: list(details.certifications), projects: (details.projects || []).map((project) => plainText(project.title)),
+      service_area: plainText(details.serviceArea), company_size: details.size || "", ownership: details.ownership,
+      representative: plainText(details.representative), website: details.website || "",
       publish_contact: details.publishContact === true,
       public_email: details.publishContact ? details.publicEmail || "" : "",
-      public_phone: details.publishContact ? details.publicPhone || "" : "",
+      public_phone: details.publishContact ? plainText(details.publicPhone) : "",
     };
   }
 
@@ -6643,13 +6659,16 @@
     const text = String(error?.message || "");
     if (/up to 5 company profiles/i.test(text)) return `Your account can have up to ${MAX_MEMBER_PROFILES} company profiles. Delete one to add another.`;
     if (error?.status === 401 || error?.code === "42501" || /jwt|row-level security/i.test(text)) return "Your sign-in expired. Sign in again, then save.";
+    if (error?.code === "23514") return TEXT_REJECTED;
     return "Your profile couldn't be saved. Check your connection and try again.";
   }
 
   async function saveMemberProfile(details, images, existing) {
     if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then save.");
+    const fields = memberRow(details);
+    if (!fields.name || !fields.description) throw new Error("Add a company name and description using letters or numbers.");
     const table = account.client.from(PROFILES_TABLE);
-    const request = existing ? table.update(memberRow(details)).eq("id", existing.remoteId) : table.insert(memberRow(details));
+    const request = existing ? table.update(fields).eq("id", existing.remoteId) : table.insert(fields);
     const { data, error } = await request.select(PROFILE_COLUMNS).single();
     if (error) throw new Error(memberSaveError(error));
     let row = data;
@@ -7393,8 +7412,8 @@
           renderExpoFloor();
           renderFullCompanyProfile();
           document.getElementById("join-dialog")?.close();
-          announce(!imagesSaved ? `Changes to ${name} are published, but a new image couldn't be uploaded. Try it again.`
-            : mediaSaved ? `Changes to ${name} are published.` : `Changes to ${name} are published, but the new video or photos couldn't be stored in this browser.`);
+          announce(!imagesSaved ? `Changes to ${updated.name} are published, but a new image couldn't be uploaded. Try it again.`
+            : mediaSaved ? `Changes to ${updated.name} are published.` : `Changes to ${updated.name} are published, but the new video or photos couldn't be stored in this browser.`);
           return;
         }
         const previous = { ...existing };
@@ -7425,7 +7444,7 @@
         renderDirectory();
         renderExpoFloor();
         form.reset();
-        setFormMessage(`${name} is published to your BOND account and shows in the directory for everyone.`);
+        setFormMessage(`${published.name} is published to your BOND account and shows in the directory for everyone.`);
         const success = document.getElementById("join-success");
         if (success && !imagesSaved) success.append(element("p", "ownership-note", "Your logo or cover image couldn't be uploaded. Use Edit profile to try again."));
         if (success && !mediaSaved) success.append(element("p", "ownership-note", "Your video and project photos couldn't be stored in this browser, so they won't appear on the profile."));
