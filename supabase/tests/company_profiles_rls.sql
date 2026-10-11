@@ -48,6 +48,11 @@ begin
     insert into rls_results values ('member cannot insert for someone else', true);
   end;
 
+  insert into public.company_profiles (id, name, industry, description) values (user_b, 'Chosen id', 'Energy', 'Picks its own id')
+  returning id into owner_after;
+  insert into rls_results values ('member cannot choose a profile id', owner_after <> user_b);
+  delete from public.company_profiles where id = owner_after;
+
   begin
     insert into public.company_profiles (name, industry, description, public_email) values ('Hidden', 'Energy', 'Hidden contact', 'a@example.test');
     insert into rls_results values ('unpublished contact details are rejected', false);
@@ -189,8 +194,26 @@ begin
     insert into rls_results values ('sixth profile is rejected', true);
   end;
 
-  -- Owner can delete their own.
   perform set_config('request.jwt.claims', json_build_object('sub', user_a, 'role', 'authenticated')::text, true);
+  begin
+    insert into public.company_profiles (owner_id, name, industry, description) values (user_b, 'Probe', 'Energy', 'Probing B''s count');
+    insert into rls_results values ('another account''s profile count cannot be probed', false);
+  exception when insufficient_privilege then
+    insert into rls_results values ('another account''s profile count cannot be probed', true);
+  when check_violation then
+    insert into rls_results values ('another account''s profile count cannot be probed', false);
+  end;
+
+  -- Owner can delete their own, once its images are removed.
+  begin
+    delete from public.company_profiles where id = profile_a;
+    insert into rls_results values ('a profile cannot be deleted while its images remain', false);
+  exception when object_not_in_prerequisite_state then
+    insert into rls_results values ('a profile cannot be deleted while its images remain', true);
+  end;
+  perform set_config('storage.allow_delete_query', 'true', true);
+  delete from storage.objects where bucket_id = 'company-media' and name like profile_a::text || '/%';
+  perform set_config('storage.allow_delete_query', 'false', true);
   delete from public.company_profiles where id = profile_a;
   get diagnostics affected = row_count;
   insert into rls_results values ('owner can delete', affected = 1);

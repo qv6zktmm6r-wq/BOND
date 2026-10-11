@@ -5943,16 +5943,10 @@
     if (!(await loadOwnProfileIds())) throw fail(failed);
     const bucket = account.client.storage.from(MEDIA_BUCKET);
     const paths = [];
-    // Profile folders, plus the older "<account id>/<profile id>/" layout.
-    const pending = [...account.ownIds, account.user.id];
-    for (let index = 0; index < pending.length; index += 1) {
-      const folder = pending[index];
+    for (const folder of account.ownIds) {
       const { data: entries, error } = await bucket.list(folder, { limit: 100 });
       if (error) throw fail(failed);
-      for (const entry of entries || []) {
-        if (entry.id) paths.push(`${folder}/${entry.name}`);
-        else if (folder === account.user.id) pending.push(`${folder}/${entry.name}`);
-      }
+      for (const entry of entries || []) if (entry.id) paths.push(`${folder}/${entry.name}`);
     }
     if (paths.length) {
       const { error } = await bucket.remove(paths);
