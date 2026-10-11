@@ -29,6 +29,10 @@
   const OPPORTUNITY_COLUMNS = "id,profile_id,type,title,summary,scope,seeking,location,created_at";
   const RESPONSES_TABLE = "opportunity_responses";
   const RESPONSE_COLUMNS = "id,opportunity_id,profile_id,message,contact,created_at";
+  const UPDATES_TABLE = "company_updates";
+  const UPDATE_COLUMNS = "id,profile_id,type,text,created_at";
+  const FOLLOWS_TABLE = "company_follows";
+  const HIDDEN_TEXT_CHARACTERS = /[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g;
   const AUTH_STORAGE_KEY = "bond.auth";
   const FLASH_KEY = "bond.flash";
   const MAX_MEMBER_PROFILES = 5;
@@ -359,7 +363,11 @@
   const memberResponses = Object.create(null);
   const postedOpportunities = readPostedOpportunities();
   const responsesByOpportunity = readResponses();
-  const followedCompanies = new Set(readStoredIds(FOLLOWS_KEY));
+  // Follows of sample companies and anything followed while signed out stay in this browser;
+  // follows of member companies made while signed in live in the account (account.follows).
+  const localFollows = new Set(readStoredIds(FOLLOWS_KEY));
+  const followedCompanies = new Set(localFollows);
+  const memberUpdates = [];
   const hostedEvents = readHostedEvents();
   const eventRsvps = readRsvps();
   const opportunityRooms = readRooms();
@@ -983,7 +991,7 @@
   }
 
   function allPosts() {
-    return [...postedUpdates, ...samplePosts].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+    return [...memberUpdates, ...postedUpdates, ...samplePosts].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   }
 
   function shortDate(at) {
@@ -1494,16 +1502,38 @@
     button.classList.toggle("is-following", following);
   }
 
-  function toggleFollow(profile) {
-    const following = !followedCompanies.has(profile.id);
-    if (following) followedCompanies.add(profile.id);
-    else followedCompanies.delete(profile.id);
-    const persisted = writeStoredValue(FOLLOWS_KEY, [...followedCompanies]);
+  function paintFollows() {
     document.querySelectorAll("[data-follow-company]").forEach(paintFollowButton);
     if (currentFeedFilter === "Following") renderFeed();
     else paintFeedFilters();
+  }
+
+  async function toggleFollow(profile) {
+    const following = !followedCompanies.has(profile.id);
+    const inAccount = Boolean(profile.member && account.user && (following || account.follows.has(profile.id)));
+    let persisted = true;
+    if (inAccount) {
+      if (following) account.follows.add(profile.id);
+      else account.follows.delete(profile.id);
+    } else if (following) localFollows.add(profile.id);
+    if (!following) localFollows.delete(profile.id);
+    if (!inAccount || !following) persisted = writeStoredValue(FOLLOWS_KEY, [...localFollows]);
+    rebuildFollows();
+    paintFollows();
+    if (inAccount) {
+      try {
+        await saveMemberFollow(profile, following);
+      } catch (error) {
+        if (following) account.follows.delete(profile.id);
+        else account.follows.add(profile.id);
+        rebuildFollows();
+        paintFollows();
+        announce(error.message);
+        return;
+      }
+    }
     announce(following
-      ? `Following ${profile.name}. Its updates appear under Following${persisted ? "" : " for this visit"}.`
+      ? `Following ${profile.name}. Its updates appear under Following${inAccount ? " on every device you sign in to" : persisted ? "" : " for this visit"}.`
       : `You unfollowed ${profile.name}.`);
   }
 
@@ -3506,7 +3536,7 @@
     const name = element("button", "feed-company", profile.name);
     name.type = "button";
     name.addEventListener("click", () => openCompany(profile, name));
-    who.append(name, element("span", "feed-meta", `${profile.category} · ${timeAgo(post.at)} · ${post.local ? "Shared in this browser" : "Sample update"}`));
+    who.append(name, element("span", "feed-meta", `${profile.category} · ${timeAgo(post.at)} · ${post.member ? "Member update" : post.local ? "Shared in this browser" : "Sample update"}`));
     head.append(avatar, who);
     if (showCompany && !isOwn(profile)) head.append(followButton(profile, "button button-secondary feed-follow"));
     card.setAttribute("aria-label", `${postTypes[post.type]} from ${profile.name}`);
@@ -3529,13 +3559,26 @@
       openConversation(profile, talk, `Hi ${firstName}, I saw your update: "${snippet}" `);
     });
     if (!isOwn(profile)) actions.append(talk);
-    if (post.local) {
+    if (post.local || (post.member && isOwn(profile))) {
       const remove = element("button", "danger-link", "Remove");
       remove.type = "button";
-      remove.addEventListener("click", () => {
+      remove.addEventListener("click", async () => {
         if (remove.dataset.confirm !== "yes") {
           remove.dataset.confirm = "yes";
           remove.textContent = "Tap again to remove";
+          return;
+        }
+        if (post.member) {
+          remove.disabled = true;
+          try {
+            await deleteMemberUpdate(post);
+          } catch (error) {
+            remove.disabled = false;
+            announce(error.message);
+            return;
+          }
+          refreshFeeds();
+          announce("Your update was removed.");
           return;
         }
         const index = postedUpdates.findIndex((item) => item.id === post.id);
@@ -3555,7 +3598,8 @@
       const active = button.dataset.feedFilter === currentFeedFilter;
       button.classList.toggle("is-active", active);
       button.setAttribute("aria-pressed", String(active));
-      if (button.dataset.feedFilter === "Following") button.textContent = followedCompanies.size ? `Following (${followedCompanies.size})` : "Following";
+      const followCount = [...followedCompanies].filter((id) => resolveProfile(id)).length;
+      if (button.dataset.feedFilter === "Following") button.textContent = followCount ? `Following (${followCount})` : "Following";
     });
   }
 
@@ -3621,6 +3665,7 @@
     body.append(element("p", "dialog-copy", "Share a project, a new capability, a partnership, a hiring announcement, or an upcoming event. Followers see it in their feed."));
     const picker = companyPicker("update-company", "Posting as", { selected: companyId });
     if (!picker.hasOwn) createProfileHint(body);
+    if (ACCOUNTS_ENABLED) body.append(element("p", "form-hint", "Updates from your published companies are visible to everyone on BOND. Updates from browser drafts and sample companies stay in this browser."));
     const form = element("form", "chat-form update-form");
     const typeLabel = element("label", "", "Type of update");
     typeLabel.htmlFor = "update-type";
@@ -3642,8 +3687,9 @@
     const actions = element("div", "chat-actions");
     actions.append(submit, dictationButton(textarea, status));
     form.append(picker.label, picker.select, typeLabel, type, label, textarea, actions, status);
-    form.addEventListener("submit", (event) => {
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (submit.disabled) return;
       const text = cleanMessage(textarea.value).slice(0, 500);
       const companyChoice = knownProfileId(picker.select.value) ? picker.select.value : "";
       if (!text || !companyChoice) {
@@ -3651,7 +3697,31 @@
         textarea.focus();
         return;
       }
-      const post = { id: newId("post"), type: postTypes[type.value] ? type.value : "project", companyId: companyChoice, text, at: new Date().toISOString(), local: true };
+      const postType = postTypes[type.value] ? type.value : "project";
+      const poster = resolveProfile(companyChoice);
+      if (poster?.member) {
+        const visibleText = visibleUpdateText(text);
+        if (!visibleText) {
+          status.textContent = "Write your update before sharing.";
+          textarea.focus();
+          return;
+        }
+        submit.disabled = true;
+        status.textContent = "Sharing…";
+        try {
+          await postMemberUpdate(postType, visibleText, poster);
+        } catch (error) {
+          submit.disabled = false;
+          status.textContent = error.message;
+          return;
+        }
+        currentFeedFilter = "All";
+        refreshFeeds();
+        dialog.close();
+        announce("Update shared. Everyone on BOND can see it now.");
+        return;
+      }
+      const post = { id: newId("post"), type: postType, companyId: companyChoice, text, at: new Date().toISOString(), local: true };
       postedUpdates.unshift(post);
       const persisted = savePostedUpdates();
       currentFeedFilter = "All";
@@ -5414,7 +5484,7 @@
     form.elements.namedItem("company")?.focus();
   }
 
-  const account = { client: null, user: null, ownIds: new Set(), loaded: false, error: "" };
+  const account = { client: null, user: null, ownIds: new Set(), follows: new Set(), loaded: false, error: "" };
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -5672,6 +5742,105 @@
     writeStoredValue(RESPONSES_KEY, responsesByOpportunity);
   }
 
+  function visibleUpdateText(value) {
+    return cleanMessage(typeof value === "string" ? value.replace(HIDDEN_TEXT_CHARACTERS, "") : "").slice(0, 500);
+  }
+
+  function memberUpdateFromRow(row) {
+    if (!row || typeof row !== "object" || typeof row.id !== "string" || typeof row.profile_id !== "string") return null;
+    const text = visibleUpdateText(row.text);
+    const at = storedTime(row.created_at);
+    if (!postTypes[row.type] || !text || !at) return null;
+    return { id: `mu-${row.id}`, remoteId: row.id, member: true, type: row.type, companyId: `m-${row.profile_id}`, text, at };
+  }
+
+  async function loadMemberUpdates() {
+    const pageId = document.getElementById("full-company-profile") ? new URLSearchParams(window.location.search).get("id") || "" : "";
+    const updates = () => account.client.from(UPDATES_TABLE).select(UPDATE_COLUMNS).order("created_at", { ascending: false });
+    const [feed, page] = await Promise.all([
+      updates().limit(200),
+      MEMBER_ID_PATTERN.test(pageId) ? updates().eq("profile_id", pageId.slice(2)).limit(100) : null,
+    ]);
+    if (feed.error) return false;
+    const byId = new Map();
+    for (const row of [...(feed.data || []), ...(page && !page.error && Array.isArray(page.data) ? page.data : [])]) {
+      const update = memberUpdateFromRow(row);
+      if (update) byId.set(update.id, update);
+    }
+    memberUpdates.splice(0, memberUpdates.length, ...byId.values());
+    return true;
+  }
+
+  async function postMemberUpdate(type, text, profile) {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then share.");
+    const { data, error } = await account.client.from(UPDATES_TABLE)
+      .insert({ profile_id: profile.remoteId, type, text }).select(UPDATE_COLUMNS).single();
+    if (error && /^Each company can have up to/.test(error.message || "")) {
+      throw new Error(`${profile.name} already has 100 updates. Remove an older one to share another.`);
+    }
+    if (error && /^You can share up to/.test(error.message || "")) throw new Error(`${error.message} Try again tomorrow.`);
+    const update = error ? null : memberUpdateFromRow(data);
+    if (!update) throw new Error("Your update couldn't be shared. Check your connection and try again.");
+    memberUpdates.unshift(update);
+    return update;
+  }
+
+  function forgetMemberUpdates(match) {
+    for (let index = memberUpdates.length - 1; index >= 0; index -= 1) if (match(memberUpdates[index])) memberUpdates.splice(index, 1);
+  }
+
+  async function deleteMemberUpdate(update) {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then remove the update.");
+    const { data, error } = await account.client.from(UPDATES_TABLE).delete().eq("id", update.remoteId).select("id");
+    if (error || !Array.isArray(data) || data.length !== 1) throw new Error("This update couldn't be removed. Check your connection and try again.");
+    forgetMemberUpdates((item) => item.id === update.id);
+  }
+
+  async function moveDraftUpdates(draft, profile) {
+    const drafts = postedUpdates.filter((post) => post.companyId === draft.id && !post.eventId).reverse();
+    for (const post of drafts) {
+      try {
+        await postMemberUpdate(post.type, post.text, profile);
+      } catch {
+        continue;
+      }
+      postedUpdates.splice(postedUpdates.indexOf(post), 1);
+    }
+    savePostedUpdates();
+  }
+
+  function rebuildFollows() {
+    followedCompanies.clear();
+    for (const id of localFollows) followedCompanies.add(id);
+    for (const id of account.follows) followedCompanies.add(id);
+  }
+
+  async function loadMemberFollows() {
+    account.follows = new Set();
+    if (account.user) {
+      const { data, error } = await account.client.from(FOLLOWS_TABLE).select("profile_id").limit(500);
+      if (error) {
+        rebuildFollows();
+        return false;
+      }
+      for (const row of Array.isArray(data) ? data : []) if (typeof row.profile_id === "string") account.follows.add(`m-${row.profile_id}`);
+    }
+    rebuildFollows();
+    return true;
+  }
+
+  async function saveMemberFollow(profile, following) {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then follow.");
+    const table = account.client.from(FOLLOWS_TABLE);
+    const { error } = following
+      ? await table.insert({ profile_id: profile.remoteId })
+      : await table.delete().eq("profile_id", profile.remoteId);
+    if (!error || (following && error.code === "23505")) return;
+    if (/^You can follow up to .* a day\.$/.test(error.message || "")) throw new Error(`${error.message} Try again tomorrow.`);
+    if (/^You can follow up to/.test(error.message || "")) throw new Error(`${error.message} Unfollow one to follow ${profile.name}.`);
+    throw new Error(`${following ? "Following" : "Unfollowing"} ${profile.name} didn't save. Check your connection and try again.`);
+  }
+
   function markOwnMemberProfiles() {
     for (const profile of profiles) if (profile.member) profile.mine = Boolean(account.user && account.ownIds.has(profile.remoteId));
   }
@@ -5683,6 +5852,8 @@
     renderFullCompanyProfile();
     renderDashboard();
     refreshOpportunityLists();
+    refreshFeeds();
+    document.querySelectorAll("[data-follow-company]").forEach(paintFollowButton);
   }
 
   function cleanAuthParams() {
@@ -5721,13 +5892,13 @@
         account.user = next;
         if (!changed) return;
         window.setTimeout(async () => {
-          const [ownLoaded] = await Promise.all([loadOwnProfileIds(), loadMemberResponses()]);
+          const [ownLoaded] = await Promise.all([loadOwnProfileIds(), loadMemberResponses(), loadMemberFollows()]);
           if (!ownLoaded) account.ownIds = new Set();
           markOwnMemberProfiles();
           refreshAccountViews();
         }, 0);
       });
-      await Promise.all([loadMemberProfiles(), loadMemberOpportunities(), loadMemberResponses()]);
+      await Promise.all([loadMemberProfiles(), loadMemberOpportunities(), loadMemberResponses(), loadMemberUpdates(), loadMemberFollows()]);
     } catch {
       account.error = "Sign-in isn't available right now. Refresh the page to try again.";
     }
@@ -6006,7 +6177,12 @@
     const removed = profiles.filter((profile) => profile.member && account.ownIds.has(profile.remoteId));
     for (let index = profiles.length - 1; index >= 0; index -= 1) if (removed.includes(profiles[index])) profiles.splice(index, 1);
     forgetMemberOpportunities((item) => removed.some((profile) => profile.id === item.companyId));
+    forgetMemberUpdates((item) => removed.some((profile) => profile.id === item.companyId));
     for (const key of Object.keys(memberResponses)) delete memberResponses[key];
+    account.follows = new Set();
+    for (const id of [...localFollows]) if (id.startsWith("m-")) localFollows.delete(id);
+    writeStoredValue(FOLLOWS_KEY, [...localFollows]);
+    rebuildFollows();
     await Promise.all(removed.map((profile) => mediaRequest("readwrite", (store) => store.delete(profile.id)).catch(() => {})));
     await account.client.auth.signOut({ scope: "local" }).catch(() => {});
     account.user = null;
@@ -6101,6 +6277,7 @@
       if (error || !Array.isArray(data) || data.length !== 1) throw new Error(failed);
       account.ownIds.delete(profile.remoteId);
       forgetMemberOpportunities((item) => item.companyId === profile.id);
+      forgetMemberUpdates((item) => item.companyId === profile.id);
       for (const [key, list] of Object.entries(memberResponses)) memberResponses[key] = list.filter((response) => response.from !== profile.id);
     }
     const index = profiles.indexOf(profile);
@@ -6161,6 +6338,7 @@
         const media = await readProfileMedia(draft);
         if (media.video || media.photos.length) await saveProfileMedia(profile.id, media).catch(() => {});
         await moveDraftOpportunities(draft, profile);
+        await moveDraftUpdates(draft, profile);
         remapStoredCompanyId(draft.id, profile.id);
       } catch (error) {
         failure = error.message || "A draft couldn't be moved.";

@@ -87,7 +87,8 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 - [x] Companies publish projects, new capabilities, partnerships, hiring announcements, and upcoming events (homepage feed, plus an Activity section on every profile)
 - [x] Follow a company from the feed, its profile, or the expo side panel; a Following filter shows only followed companies
 - [x] Start a conversation from a feed post (opens the demo chat with the post quoted)
-- [ ] Shared updates and follows visible across devices, with notifications (needs accounts and a database)
+- [x] Shared updates and follows visible across devices: updates from published companies are visible to everyone, and follows of published companies made while signed in are saved to the account (private to the member). Updates from browser drafts and sample companies, event announcements, and follows of sample companies stay in the browser
+- [ ] Email notification when a followed company shares an update
 
 ## Member Dashboard (medium priority)
 
@@ -140,7 +141,7 @@ Working in the preview: rooms are saved in the visitor's browser, the project re
 - [x] Delete-my-account option (Account dialog, confirmed by typing your email) that also removes the account's company profiles and their logo and cover files from storage
 - [x] Profile owners are private: visitors can't tell which company profiles share one account; only the signed-in owner sees which profiles are theirs
 - [ ] Representative sign-in and roles (several people managing one company)
-- [~] Database for profiles and Opportunity Board posts and responses (done); messages, meetings, and follows are still in the browser
+- [~] Database for profiles, Opportunity Board posts and responses, company updates, and follows (done); messages, meetings, events, and RSVPs are still in the browser
 - [ ] Business claiming and verification; certification verification (VOSB/SDVOSB and others)
 - [ ] Video hosting and live streaming (cost to scope)
 - [ ] AI provider for matchmaking and Opportunity Rooms (cost to scope)
