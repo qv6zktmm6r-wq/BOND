@@ -38,6 +38,20 @@
   const MESSAGES_TABLE = "company_messages";
   const MESSAGE_COLUMNS = "id,conversation_id,from_company,kind,body,times,meeting_status,created_at";
   const READS_TABLE = "company_conversation_reads";
+  const ROOMS_TABLE = "opportunity_rooms";
+  const ROOM_COLUMNS = "id,host_profile_id,title,brief,needs,city,preference,created_at,updated_at";
+  const ROOM_MEMBERS_TABLE = "opportunity_room_members";
+  const ROOM_MEMBER_COLUMNS = "room_id,profile_id,needs,status,invited_at,responded_at";
+  const ROOM_MESSAGES_TABLE = "opportunity_room_messages";
+  const ROOM_MESSAGE_COLUMNS = "id,room_id,profile_id,kind,body,created_at";
+  const ROOM_MEETINGS_TABLE = "opportunity_room_meetings";
+  const ROOM_MEETING_COLUMNS = "id,room_id,topic,starts_at,duration_minutes,link,created_at";
+  const ROOM_PROPOSALS_TABLE = "opportunity_room_proposals";
+  const ROOM_PROPOSAL_COLUMNS = "id,room_id,profile_id,title,price,timeline,summary,status,created_at";
+  const ROOMS_SEEN_KEY = "bond.rooms.seen";
+  const SHARED_ROOM_ID_PATTERN = /^r-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  const MAX_SHARED_ROOM_PROPOSALS = 3;
+  const SHARED_ROOM_HINT = "Open the room as one of your published companies to share it: the published companies you invite see it on their dashboards and choose whether to join. Rooms opened as yourself, as a draft, or with only sample companies stay in this browser as a demo.";
   const MAX_MESSAGE_LENGTH = 2000;
   const MAX_MEETING_TIMES_LENGTH = 200;
   const MEETING_STATUS_LABELS = { pending: "Waiting for an answer", accepted: "Accepted", declined: "Declined", cancelled: "Cancelled" };
@@ -4856,7 +4870,7 @@
       members: members.map((member) => ({ companyId: member.companyId, needs: member.needs, at })), messages: [], meetings: [], proposals: [],
     };
     const names = room.members.map((member) => resolveProfile(member.companyId)?.name).filter(Boolean);
-    pushRoomMessage(room, { from: "", note: true, at, text: `Room opened with ${joinNames(names)}. Invitations are sent when BOND launches accounts; until then this room stays in this browser.` });
+    pushRoomMessage(room, { from: "", note: true, at, text: `Demo room opened with ${joinNames(names)}. It stays in this browser and no invitations are sent.` });
     opportunityRooms.unshift(room);
     if (saveRooms()) return room;
     opportunityRooms.shift();
@@ -4995,6 +5009,7 @@
     const row = element("div", "room-form-row");
     row.append(titleField, ownerField);
     create.append(element("h3", "matchmaker-heading", "Open a private room for this team"), element("p", "room-copy", "Bring the companies you picked into one place for introductions, conversation, meetings, and proposals."), row, submit, createStatus);
+    if (ACCOUNTS_ENABLED) create.append(element("p", "form-hint", SHARED_ROOM_HINT));
     let suggestion = { team: [], extras: [], uncovered: [] };
     const drawTeam = () => {
       suggestion = suggestTeam(state.brief, state.needs, { city: state.city, preference: state.preference });
@@ -5029,7 +5044,7 @@
       create.hidden = !suggestion.team.length && !suggestion.extras.length;
       teamStatus.textContent = `${suggestion.team.length} ${suggestion.team.length === 1 ? "company" : "companies"} suggested for the team.`;
     };
-    create.addEventListener("submit", (event) => {
+    create.addEventListener("submit", async (event) => {
       event.preventDefault();
       const fail = (message, input) => {
         createStatus.textContent = message;
@@ -5041,8 +5056,31 @@
       if (!name) return fail("Give the room a name.", title);
       if (!chosen.length) return fail("Choose at least one company to invite.", teamBox.querySelector('input[name="room-member"]'));
       if (chosen.length > MAX_ROOM_MEMBERS) return fail(`A room holds up to ${MAX_ROOM_MEMBERS} companies. Uncheck a few.`, teamBox.querySelector('input[name="room-member"]:checked'));
-      if (opportunityRooms.length >= MAX_ROOMS) return fail(`You have ${MAX_ROOMS} rooms already. Close one from its room page first.`, submit);
       const entries = [...suggestion.team, ...suggestion.extras];
+      const host = resolveProfile(ownerId);
+      const published = chosen.map(resolveProfile).filter((profile) => profile?.member && !isOwn(profile));
+      if (account.user && host?.member && isOwn(host) && published.length) {
+        submit.disabled = true;
+        createStatus.textContent = "Opening the room…";
+        try {
+          const result = await openSharedRoom({
+            title: plainText(name).slice(0, 80), brief: plainText(state.brief, true).slice(0, 1500), needs: state.needs,
+            city: plainText(state.city).slice(0, 80), preference: state.preference, host,
+            invitees: published.map((profile) => ({ profile, needs: entries.find((entry) => entry.profile.id === profile.id)?.needs || [] })),
+          });
+          const dropped = chosen.length - published.length;
+          goWithFlash(roomHref(result), [
+            `"${name}" is open. The companies you invited see it on their dashboards.`,
+            dropped ? `${dropped} sample ${dropped === 1 ? "company was" : "companies were"} left out; shared rooms include only published companies.` : "",
+            result.inviteError,
+          ].filter(Boolean).join(" "));
+        } catch (error) {
+          submit.disabled = false;
+          fail(error.message, submit);
+        }
+        return;
+      }
+      if (opportunityRooms.length >= MAX_ROOMS) return fail(`You have ${MAX_ROOMS} rooms already. Close one from its room page first.`, submit);
       const room = createRoom({
         title: name, brief: state.brief, needs: state.needs, city: state.city, preference: state.preference, owner: ownerId,
         members: chosen.map((id) => ({ companyId: id, needs: entries.find((entry) => entry.profile.id === id)?.needs || [] })),
@@ -5058,14 +5096,18 @@
     const box = document.getElementById("room-list");
     if (!box) return;
     box.replaceChildren();
-    if (!opportunityRooms.length) return;
+    const invitations = sharedRoomInvitations();
+    const rooms = [...invitations, ...sharedRoomsJoined(), ...opportunityRooms];
+    if (!rooms.length) return;
     box.append(element("h3", "detail-label", "Your Opportunity Rooms"));
     const list = element("ul", "room-list");
-    for (const room of opportunityRooms) {
+    for (const room of rooms) {
       const item = element("li");
       const link = element("a", "room-list-link");
       link.href = roomHref(room);
-      link.append(element("strong", "", room.title), element("span", "", roomSummary(room)));
+      const summary = !room.shared ? `Demo in this browser · ${roomSummary(room)}`
+        : invitations.includes(room) ? `Invitation from ${resolveProfile(room.owner)?.name || "a BOND company"} · Accept or decline` : sharedRoomSummary(room);
+      link.append(element("strong", "", room.title), element("span", "", summary));
       item.append(link);
       list.append(item);
     }
@@ -5078,22 +5120,46 @@
     const { dialog, body } = view;
     body.append(element("p", "dialog-copy", "An Opportunity Room is a private space for one project: introductions, conversation, meetings, and proposals with the companies you invite."));
     let firstFocus = null;
-    if (opportunityRooms.length) {
+    const hosted = account.user ? account.rooms.filter((room) => sharedRoomRole(room).role === "host") : [];
+    const rooms = [...hosted, ...opportunityRooms];
+    if (rooms.length) {
       body.append(element("h3", "detail-label", "Add to one of your rooms"));
       const status = element("p", "chat-status");
       status.setAttribute("role", "status");
       const list = element("ul", "room-invite-list");
-      for (const room of opportunityRooms) {
-        const inRoom = room.owner === profile.id || room.members.some((member) => member.companyId === profile.id);
+      for (const room of rooms) {
+        const member = room.members.find((entry) => entry.companyId === profile.id);
+        const inRoom = room.owner === profile.id || Boolean(member);
         const full = room.members.length >= MAX_ROOM_MEMBERS;
+        const sampleOnly = room.shared && !profile.member;
         const item = element("li");
         const copy = element("div");
-        copy.append(element("strong", "", room.title), element("span", "", roomSummary(room)));
-        const add = element("button", "button button-secondary", inRoom ? "Already in this room" : full ? "Room is full" : "Add to this room");
+        copy.append(element("strong", "", room.title), element("span", "", room.shared ? sharedRoomSummary(room) : `Demo in this browser · ${roomSummary(room)}`));
+        const add = element("button", "button button-secondary", inRoom
+          ? member?.status === "declined" ? "Declined your invitation" : member?.status === "invited" ? "Invitation sent" : "Already in this room"
+          : sampleOnly ? "Shared rooms take published companies only" : full ? "Room is full" : "Add to this room");
         add.type = "button";
-        add.disabled = inRoom || full;
+        add.disabled = inRoom || full || sampleOnly;
         add.setAttribute("aria-label", `${add.textContent}: ${room.title}`);
-        add.addEventListener("click", () => {
+        add.addEventListener("click", async () => {
+          if (room.shared) {
+            add.disabled = true;
+            try {
+              await inviteToSharedRoom(room, profile, room.needs.filter((id) => needById(id).category === profile.category));
+            } catch (error) {
+              add.disabled = false;
+              status.textContent = error.message;
+              return;
+            }
+            await loadMemberRooms();
+            add.textContent = "Invitation sent";
+            add.setAttribute("aria-label", `Invitation sent: ${room.title}`);
+            const link = element("a", "company-link", "Open the room");
+            link.href = roomHref(room);
+            status.replaceChildren(`${profile.name} was invited to "${room.title}" and will see the invitation on their dashboard. `, link);
+            link.focus();
+            return;
+          }
           const persisted = addRoomMember(room, profile.id);
           add.textContent = "Added";
           add.setAttribute("aria-label", `Added to ${room.title}`);
@@ -5109,7 +5175,7 @@
       }
       body.append(list, status);
     }
-    body.append(element("h3", "detail-label", opportunityRooms.length ? "Or start a new room" : "Start a room"));
+    body.append(element("h3", "detail-label", rooms.length ? "Or start a new room" : "Start a room"));
     const form = element("form", "opportunity-form");
     const field = (tag, id, labelText, attributes = {}) => {
       const label = element("label", "", labelText);
@@ -5132,7 +5198,8 @@
     const actions = element("div", "chat-actions");
     actions.append(submit, dictationButton(brief, status));
     form.append(actions, status);
-    form.addEventListener("submit", (event) => {
+    if (ACCOUNTS_ENABLED) form.append(element("p", "form-hint", SHARED_ROOM_HINT));
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const fail = (message, input) => {
         status.textContent = message;
@@ -5142,9 +5209,26 @@
       const ownerId = knownProfileId(owner.select.value) ? owner.select.value : "";
       if (!name) return fail("Give the project a name.", title);
       if (ownerId === profile.id) return fail(`Choose who is opening the room. ${profile.name} is the company you're inviting.`, owner.select);
-      if (opportunityRooms.length >= MAX_ROOMS) return fail(`You have ${MAX_ROOMS} rooms already. Close one from its room page first.`, submit);
       const text = cleanMessage(brief.value).slice(0, 1500);
       const own = needForCategory(profile.category);
+      const host = resolveProfile(ownerId);
+      if (account.user && host?.member && isOwn(host) && profile.member) {
+        submit.disabled = true;
+        status.textContent = "Opening the room…";
+        try {
+          const result = await openSharedRoom({
+            title: plainText(name).slice(0, 80), brief: plainText(text, true).slice(0, 1500), city: "", preference: "", host,
+            needs: [...new Set([...(own ? [own.id] : []), ...detectNeeds(text)])],
+            invitees: [{ profile, needs: own ? [own.id] : [] }],
+          });
+          goWithFlash(roomHref(result), [`"${name}" is open. ${profile.name} sees the invitation on their dashboard.`, result.inviteError].filter(Boolean).join(" "));
+        } catch (error) {
+          submit.disabled = false;
+          fail(error.message, submit);
+        }
+        return;
+      }
+      if (opportunityRooms.length >= MAX_ROOMS) return fail(`You have ${MAX_ROOMS} rooms already. Close one from its room page first.`, submit);
       const room = createRoom({
         title: name, brief: text, needs: [...new Set([...(own ? [own.id] : []), ...detectNeeds(text)])], owner: ownerId,
         members: [{ companyId: profile.id, needs: own ? [own.id] : [] }],
@@ -5157,35 +5241,14 @@
     (firstFocus || title).focus();
   }
 
-  function renderOpportunityRoom() {
-    const container = document.getElementById("opportunity-room");
-    if (!container) return;
-    container.replaceChildren();
-    const requestedId = new URLSearchParams(window.location.search).get("id");
-    const room = opportunityRooms.find((entry) => entry.id === requestedId);
-    if (!room) {
-      const notice = element("section", "profile-not-found");
-      notice.append(element("p", "dialog-kicker", "Opportunity Room"), element("h1", "", requestedId ? "This room isn't available here." : "Choose an Opportunity Room."));
-      notice.append(element("p", "dialog-copy", requestedId
-        ? "In this preview, rooms are saved in the browser where they were opened, so this one may be in another browser or it was closed."
-        : "Describe a project and BOND suggests companies to build it with, then opens a private room for the team."));
-      const start = element("a", "button button-primary", "Start an Opportunity Room");
-      start.href = "index.html#rooms";
-      const dashboard = element("a", "company-link", "Your rooms on the dashboard");
-      dashboard.href = "dashboard.html#rooms";
-      notice.append(start, dashboard);
-      container.append(notice);
-      return;
-    }
-    document.title = `${room.title} — BOND Opportunity Room`;
-    const ownerProfile = resolveProfile(room.owner);
-    const ownerName = ownerProfile ? ownerProfile.name : "You";
-    const save = () => {
-      room.updated = new Date().toISOString();
-      return saveRooms();
-    };
-    const saved = (persisted, text) => persisted ? text : `${text} Saved for this visit only; browser storage is full or unavailable.`;
-    const memberIds = () => room.members.map((member) => member.companyId);
+  function roomScaffold() {
+    const nav = element("nav", "profile-section-nav room-nav");
+    nav.setAttribute("aria-label", "Room sections");
+    const layout = element("div", "room-layout");
+    const mainColumn = element("div", "room-main");
+    const sideColumn = element("div", "room-side");
+    layout.append(mainColumn, sideColumn);
+    const parts = {};
     const button = (text, className, key, onClick, label) => {
       const node = element("button", className, text);
       node.type = "button";
@@ -5196,7 +5259,7 @@
     };
     const confirmButton = (text, confirmText, key, onConfirm, label) => {
       const node = button(text, "button button-secondary room-danger", key, () => {
-        if (node.dataset.armed) return onConfirm();
+        if (node.dataset.armed) return onConfirm(node);
         node.dataset.armed = "true";
         node.textContent = confirmText;
         node.setAttribute("aria-label", label ? `${confirmText}: ${label}` : confirmText);
@@ -5218,18 +5281,6 @@
       form.append(label, input);
       return input;
     };
-
-    const head = element("header", "room-head");
-    head.append(element("p", "dialog-kicker", "Opportunity Room · Private"), element("h1", "", room.title));
-    head.append(element("p", "room-meta", `Opened ${shortDate(room.at)} by ${ownerProfile ? ownerProfile.name : "you"}`));
-    head.append(element("p", "room-privacy", "Only the companies you invite can see this room. In this preview it is saved in this browser, and invitations are sent when BOND launches accounts."));
-    const nav = element("nav", "profile-section-nav room-nav");
-    nav.setAttribute("aria-label", "Room sections");
-    const layout = element("div", "room-layout");
-    const mainColumn = element("div", "room-main");
-    const sideColumn = element("div", "room-side");
-    layout.append(mainColumn, sideColumn);
-    const parts = {};
     const section = (column, id, title, copy) => {
       const block = element("section", "profile-section room-section");
       block.id = id;
@@ -5249,7 +5300,7 @@
       return parts[id];
     };
     const update = (...names) => {
-      for (const name of names) {
+      for (const name of names.length ? names : Object.keys(parts)) {
         const part = parts[name];
         const active = document.activeElement;
         const hadFocus = part.block.contains(active);
@@ -5260,6 +5311,738 @@
         (next && !next.disabled ? next : part.heading).focus();
       }
     };
+    const finish = (container, head) => {
+      nav.replaceChildren(...[...mainColumn.children, ...sideColumn.children]
+        .map((block) => block.id && nav.querySelector(`a[href="#${block.id}"]`)).filter(Boolean));
+      container.append(head, nav, layout);
+      Object.values(parts).forEach((part) => part.draw());
+    };
+    return { mainColumn, sideColumn, button, confirmButton, field, section, update, finish };
+  }
+
+  let sharedRoomPoll = 0;
+
+  function goWithFlash(href, message) {
+    try { sessionStorage.setItem(FLASH_KEY, message); } catch { /* the next page still loads */ }
+    window.location.href = href;
+  }
+
+  function sharedRoomViewKey(id) {
+    const userId = account.user?.id || "";
+    if (!userId) return `${id}|signed-out|${account.client ? "ready" : account.error ? "error" : "loading"}`;
+    if (account.roomsUser !== userId) return `${id}|${userId}|${account.roomsError ? "error" : "loading"}`;
+    const room = account.rooms.find((item) => item.id === id);
+    const { role, as } = room ? sharedRoomRole(room) : { role: "", as: [] };
+    if ((role === "host" || role === "member") && !account.roomDetails[id]) return `${id}|${userId}|${role}|detail`;
+    return `${id}|${userId}|${role || "missing"}|${as.join(",")}`;
+  }
+
+  function sharedRoomNotice(container, title, copy, { busy = false, action = null } = {}) {
+    container.replaceChildren();
+    const notice = element("section", "profile-not-found");
+    if (busy) notice.setAttribute("aria-busy", "true");
+    notice.append(element("p", "dialog-kicker", "Opportunity Room"), element("h1", "", title));
+    if (copy) notice.append(element("p", "dialog-copy", copy));
+    if (action) notice.append(action);
+    if (!busy) {
+      const dashboard = element("a", "company-link", "Your rooms on the dashboard");
+      dashboard.href = "dashboard.html#rooms";
+      notice.append(dashboard);
+    }
+    container.append(notice);
+  }
+
+  function refreshSharedRoomPage() {
+    const container = document.getElementById("opportunity-room");
+    const id = new URLSearchParams(window.location.search).get("id") || "";
+    if (!container || !SHARED_ROOM_ID_PATTERN.test(id) || container.dataset.roomView === sharedRoomViewKey(id)) return;
+    renderSharedRoom(container, id);
+  }
+
+  function renderSharedRoom(container, id) {
+    window.clearInterval(sharedRoomPoll);
+    sharedRoomPoll = 0;
+    const key = sharedRoomViewKey(id);
+    container.dataset.roomView = key;
+    document.title = "Opportunity Room — BOND";
+    if (!ACCOUNTS_ENABLED || (!account.user && account.error)) {
+      sharedRoomNotice(container, "This room isn't available right now.", account.error || "Shared Opportunity Rooms need a BOND account.");
+      return;
+    }
+    if (!account.user) {
+      if (!account.client) {
+        sharedRoomNotice(container, "Loading the room…", "", { busy: true });
+        return;
+      }
+      const signIn = element("button", "button button-primary", "Sign in");
+      signIn.type = "button";
+      signIn.addEventListener("click", () => openAccount(signIn));
+      sharedRoomNotice(container, "Sign in to open this room.", "Opportunity Rooms are private. Sign in with the email of the company that opened the room or was invited to it.", { action: signIn });
+      return;
+    }
+    if (account.roomsUser !== account.user.id) {
+      if (account.roomsError) sharedRoomNotice(container, "This room couldn't load.", "Check your connection, then refresh the page.");
+      else sharedRoomNotice(container, "Loading the room…", "", { busy: true });
+      return;
+    }
+    const room = account.rooms.find((item) => item.id === id);
+    const { role, as } = room ? sharedRoomRole(room) : { role: "", as: [] };
+    if (!room || !role) {
+      const start = element("a", "button button-primary", "Start an Opportunity Room");
+      start.href = "index.html#rooms";
+      sharedRoomNotice(container, "This room isn't available.", "It may have been closed, or your company is no longer part of it. Only a room's host and the companies it invites can open it.", { action: start });
+      return;
+    }
+    if (role === "invited") {
+      renderRoomInvitation(container, room, as);
+      return;
+    }
+    if (!account.roomDetails[id]) {
+      sharedRoomNotice(container, "Loading the room…", "", { busy: true });
+      loadSharedRoomDetail(room).then((loaded) => {
+        if (container.dataset.roomView !== key) return;
+        if (loaded) renderSharedRoom(container, id);
+        else sharedRoomNotice(container, "This room couldn't load.", "Check your connection, then refresh the page.");
+      });
+      return;
+    }
+    renderSharedRoomWorkspace(container, room, role, key);
+  }
+
+  function roomNeedList(room, { coverage = true } = {}) {
+    const list = element("ul", "room-needs");
+    for (const id of room.needs) {
+      const need = needById(id);
+      const item = element("li", "room-need");
+      const copy = element("div");
+      copy.append(element("strong", "", need.label));
+      if (coverage) {
+        const covering = room.members.filter((member) => member.status !== "declined"
+          && (member.needs.includes(id) || resolveProfile(member.companyId)?.category === need.category));
+        item.classList.toggle("is-covered", covering.some((member) => member.status === "joined"));
+        const names = covering.map((member) => `${resolveProfile(member.companyId)?.name || "A BOND company"}${member.status === "invited" ? " (invited)" : ""}`);
+        copy.append(element("span", "", names.length ? `Covered by ${joinNames(names)}` : "Not covered yet"));
+        if (!names.length) item.dataset.uncovered = id;
+      }
+      item.append(copy);
+      list.append(item);
+    }
+    return list;
+  }
+
+  function renderRoomInvitation(container, room, as) {
+    container.replaceChildren();
+    document.title = `Invitation: ${room.title} — BOND Opportunity Room`;
+    const hostName = resolveProfile(room.owner)?.name || "A BOND company";
+    const invites = room.members.filter((member) => as.includes(member.companyId));
+    const head = element("header", "room-head");
+    head.append(element("p", "dialog-kicker", "Opportunity Room · Invitation"), element("h1", "", room.title));
+    head.append(element("p", "room-meta", `${hostName} invited ${joinNames(invites.map((member) => resolveProfile(member.companyId)?.name || "your company"))} on ${shortDate(invites[0].at)}`));
+    const block = element("section", "profile-section room-section room-invitation");
+    block.setAttribute("aria-label", "Invitation");
+    block.append(element("h2", "", "The project"));
+    block.append(element("p", room.brief ? "room-brief-text" : "room-copy", room.brief || "The host didn't add a project description."));
+    const facts = [room.city ? `Location: ${room.city}` : "", room.preference ? `Prefers ${room.preference.toLocaleLowerCase()} companies` : ""].filter(Boolean);
+    if (facts.length) block.append(element("p", "room-meta", facts.join(" · ")));
+    if (room.needs.length) {
+      block.append(element("h3", "detail-label", "What the project needs"));
+      block.append(roomNeedList(room, { coverage: false }));
+    }
+    for (const member of invites) {
+      const profile = resolveProfile(member.companyId);
+      const companyName = profile?.name || "your company";
+      if (member.needs.length) block.append(element("p", "room-covers", `${companyName} was invited for ${joinNames(member.needs.map((needId) => needById(needId).label.toLocaleLowerCase()))}.`));
+      const status = element("p", "chat-status");
+      status.setAttribute("role", "status");
+      const actions = element("div", "chat-actions");
+      const answer = async (node, next) => {
+        actions.querySelectorAll("button").forEach((item) => { item.disabled = true; });
+        try {
+          await answerRoomInvitation(room, member.companyId, next);
+        } catch (error) {
+          actions.querySelectorAll("button").forEach((item) => { item.disabled = false; });
+          status.textContent = error.message;
+          node.focus();
+          return;
+        }
+        if (next === "declined") {
+          goWithFlash("dashboard.html#rooms", `You declined the invitation to "${room.title}". ${hostName} sees that you declined.`);
+          return;
+        }
+        await refreshSharedRoom(room);
+        renderSharedRoom(container, room.id);
+        announce(`${companyName} joined "${room.title}".`);
+      };
+      const accept = element("button", "button button-primary", invites.length > 1 ? `Accept as ${companyName}` : "Accept and join the room");
+      accept.type = "button";
+      accept.addEventListener("click", () => answer(accept, "joined"));
+      const decline = element("button", "button button-secondary", invites.length > 1 ? `Decline for ${companyName}` : "Decline");
+      decline.type = "button";
+      decline.addEventListener("click", () => answer(decline, "declined"));
+      actions.append(accept, decline);
+      block.append(actions, status);
+    }
+    block.append(element("p", "form-hint", `Accept to see the team, conversation, and meetings and to send ${hostName} proposals. Only ${hostName} and your company can read your proposals. If you decline, the room leaves your dashboard and ${hostName} sees that you declined.`));
+    container.append(head, block);
+  }
+
+  function renderSharedRoomWorkspace(container, room, role, key) {
+    container.replaceChildren();
+    let current = room;
+    const isHost = role === "host";
+    const detail = () => account.roomDetails[current.id] || { messages: [], meetings: [], proposals: [] };
+    const mine = () => sharedRoomRole(current).as;
+    const nameOf = (id) => resolveProfile(id)?.name || "A BOND company";
+    const hostName = nameOf(current.owner);
+    const { mainColumn, sideColumn, button, confirmButton, field, section, update, finish } = roomScaffold();
+    document.title = `${current.title} — BOND Opportunity Room`;
+    markSharedRoomSeen(current);
+
+    const head = element("header", "room-head");
+    head.append(element("p", "dialog-kicker", "Opportunity Room · Shared"), element("h1", "", current.title));
+    head.append(element("p", "room-meta", `Opened ${shortDate(current.at)} by ${hostName}${isHost ? " (you)" : ""}`));
+    head.append(element("p", "room-privacy", "Only the host and companies that accepted an invitation see the team, conversation, and meetings. Each proposal is seen only by the host and the company that sent it."));
+
+    const signature = () => JSON.stringify([current, detail()]);
+    const reload = async () => {
+      const fresh = await refreshSharedRoom(current);
+      if (sharedRoomViewKey(current.id) !== key) {
+        renderSharedRoom(container, current.id);
+        return false;
+      }
+      if (fresh) current = fresh;
+      markSharedRoomSeen(current);
+      return true;
+    };
+    const act = async (node, work, message) => {
+      if (node) node.disabled = true;
+      try {
+        await work();
+      } catch (error) {
+        if (node?.isConnected) node.disabled = false;
+        announce(error.message);
+        return false;
+      }
+      if (await reload()) update();
+      if (message) announce(message);
+      return true;
+    };
+    sharedRoomPoll = window.setInterval(async () => {
+      if (!container.isConnected || container.dataset.roomView !== key) {
+        window.clearInterval(sharedRoomPoll);
+        sharedRoomPoll = 0;
+        return;
+      }
+      if (document.hidden) return;
+      const before = signature();
+      if (await reload() && signature() !== before) update();
+    }, 20000);
+
+    const project = section(mainColumn, "project", "Project");
+    let editingNeeds = false;
+    project.draw = () => {
+      const body = project.content;
+      body.replaceChildren();
+      body.append(element("p", current.brief ? "room-brief-text" : "room-copy", current.brief || "No project description was added."));
+      const facts = [current.city ? `Location: ${current.city}` : "", current.preference ? `Prefers ${current.preference.toLocaleLowerCase()} companies` : ""].filter(Boolean);
+      if (facts.length) body.append(element("p", "room-meta", facts.join(" · ")));
+      body.append(element("h3", "detail-label", "What the project needs"));
+      if (!current.needs.length) body.append(element("p", "room-copy", isHost ? "Nothing picked yet. Choose below." : "The host hasn't picked any needs yet."));
+      const list = roomNeedList(current);
+      if (isHost && current.members.length < MAX_ROOM_MEMBERS) {
+        const samples = profiles.filter((profile) => !profile.member).map((profile) => profile.id);
+        list.querySelectorAll("[data-uncovered]").forEach((item) => {
+          const needId = item.dataset.uncovered;
+          const next = suggestTeam(current.brief, [needId], {
+            city: current.city, preference: current.preference, exclude: [...samples, current.owner, ...current.members.map((member) => member.companyId)],
+          }).team[0];
+          if (!next) return;
+          item.append(button(`Invite ${next.profile.name}`, "button button-secondary", `need-${needId}`, (node) => act(node,
+            () => inviteToSharedRoom(current, next.profile, [needId]), `${next.profile.name} was invited. They'll see the invitation on their dashboard.`),
+          `Invite ${next.profile.name} for ${needById(needId).label.toLocaleLowerCase()}`));
+        });
+      }
+      body.append(list);
+      if (!isHost) return;
+      const edit = element("details", "room-edit-needs");
+      edit.open = editingNeeds;
+      edit.addEventListener("toggle", () => { editingNeeds = edit.open; });
+      edit.append(element("summary", "", "Change what this project needs"));
+      const picker = element("fieldset", "room-needs-picker");
+      picker.append(element("legend", "sr-only", "Project needs"));
+      for (const need of projectNeeds) {
+        const label = element("label", "room-need-chip");
+        const box = element("input");
+        box.type = "checkbox";
+        box.checked = current.needs.includes(need.id);
+        box.dataset.roomKey = `pick-${need.id}`;
+        box.addEventListener("change", async () => {
+          const needs = box.checked ? [...current.needs, need.id] : current.needs.filter((id) => id !== need.id);
+          picker.disabled = true;
+          try {
+            await setSharedRoomNeeds(current, projectNeeds.map((item) => item.id).filter((id) => needs.includes(id)));
+          } catch (error) {
+            box.checked = !box.checked;
+            picker.disabled = false;
+            announce(error.message);
+            return;
+          }
+          if (await reload()) update("project");
+        });
+        label.append(box, element("span", "", need.label));
+        picker.append(label);
+      }
+      edit.append(picker);
+      body.append(edit);
+    };
+
+    const team = section(sideColumn, "team", "Team");
+    team.draw = () => {
+      const body = team.content;
+      body.replaceChildren();
+      const list = element("ul", "room-members");
+      const row = (companyId, meta, status, actions = []) => {
+        const profile = resolveProfile(companyId);
+        const item = element("li", "room-member");
+        const avatar = element("span", "company-avatar");
+        avatar.setAttribute("aria-hidden", "true");
+        if (profile) {
+          avatar.classList.toggle("has-uploaded-logo", Boolean(profile.logo));
+          avatar.append(companyLogo(profile));
+        }
+        const main = element("div", "room-member-main");
+        main.append(profile
+          ? button(profile.name, "feed-company", `member-${companyId}`, (node) => openCompany(profile, node), `View ${profile.name} profile`)
+          : element("strong", "", "A BOND company"));
+        main.append(element("span", "feed-meta", meta));
+        if (status) main.append(element("span", "room-member-status", status));
+        item.append(avatar, main);
+        if (actions.length) {
+          const box = element("div", "room-member-actions");
+          box.append(...actions);
+          item.append(box);
+        }
+        list.append(item);
+      };
+      const own = mine();
+      const message = (companyId) => {
+        const profile = resolveProfile(companyId);
+        return profile && !isOwn(profile)
+          ? [button("Message", "button button-secondary", `message-${companyId}`, (node) => openConversation(profile, node), `Message ${profile.name}`)] : [];
+      };
+      row(current.owner, `Host${isHost ? " · you" : ""}`, "", message(current.owner));
+      const labels = { joined: "Joined", invited: "Invited · waiting for an answer", declined: "Declined the invitation" };
+      for (const member of current.members) {
+        const covers = member.needs.map((id) => needById(id)?.label).filter(Boolean);
+        const actions = message(member.companyId);
+        if (isHost) {
+          actions.push(confirmButton("Remove", "Tap again to remove", `remove-${member.companyId}`, (node) => act(node,
+            () => leaveSharedRoom(current, member.companyId), `${nameOf(member.companyId)} was removed from the room.`), nameOf(member.companyId)));
+        }
+        row(member.companyId, `${covers.length ? covers.join(", ") : resolveProfile(member.companyId)?.category || "Company"}${own.includes(member.companyId) ? " · you" : ""}`,
+          labels[member.status], actions);
+      }
+      body.append(list);
+      if (!isHost) return;
+      const inRoom = new Set([current.owner, ...current.members.map((member) => member.companyId)]);
+      const available = profiles.filter((profile) => profile.member && !isOwn(profile) && !inRoom.has(profile.id));
+      if (current.members.length >= MAX_ROOM_MEMBERS) {
+        body.append(element("p", "room-copy", `A room holds up to ${MAX_ROOM_MEMBERS} invited companies. Remove one to invite another.`));
+      } else if (available.length) {
+        const form = element("form", "room-form room-invite");
+        const select = field(form, "select", "room-invite-company", "Invite another company");
+        select.dataset.roomKey = "invite-company";
+        available.forEach((profile) => select.append(new Option(`${profile.name} · ${profile.category}`, profile.id)));
+        const invite = element("button", "button button-secondary", "Invite");
+        invite.type = "submit";
+        invite.dataset.roomKey = "invite-submit";
+        form.append(invite);
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          const profile = available.find((item) => item.id === select.value);
+          if (!profile) return;
+          const needs = current.needs.filter((id) => needById(id).category === profile.category);
+          act(invite, () => inviteToSharedRoom(current, profile, needs), `${profile.name} was invited. They'll see the invitation on their dashboard.`);
+        });
+        body.append(form);
+      }
+      body.append(element("p", "form-hint", "Only companies published on BOND can join a shared room. Invited companies see the room's name, description, and needs, then accept or decline."));
+    };
+
+    const conversation = section(mainColumn, "conversation", "Conversation", "Share timelines and questions with everyone in the room. The host and every company that joined can read it.");
+    const thread = element("div", "chat-thread room-thread");
+    thread.setAttribute("role", "log");
+    thread.setAttribute("aria-live", "polite");
+    thread.setAttribute("aria-relevant", "additions");
+    thread.setAttribute("aria-label", "Room conversation");
+    conversation.content.append(thread);
+    conversation.draw = () => {
+      const atBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 40;
+      thread.replaceChildren();
+      const messages = detail().messages;
+      if (!messages.some((message) => !message.note)) thread.append(element("p", "chat-empty", "No messages yet. Introduce your company and ask what the project needs."));
+      for (const message of messages) {
+        const own = mine().includes(message.from);
+        const entry = element("article", message.note ? "room-note" : `chat-message${own ? "" : " is-theirs"}`);
+        if (!message.note) entry.append(element("p", "chat-message-author", `${message.from ? nameOf(message.from) : "A former member"}${own ? " · you" : ""}`));
+        entry.append(element("p", message.note ? "" : "chat-message-text", message.text));
+        const time = element("time", "chat-message-time", `${shortDate(message.at)}, ${new Date(message.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`);
+        time.dateTime = message.at;
+        entry.append(time);
+        thread.append(entry);
+      }
+      if (atBottom || !thread.dataset.drawn) thread.scrollTop = thread.scrollHeight;
+      thread.dataset.drawn = "true";
+      drawSender();
+    };
+    const chatForm = element("form", "chat-form room-chat-form");
+    const senderBox = element("div");
+    chatForm.append(senderBox);
+    let senderSelect = null;
+    const drawSender = () => {
+      const own = mine();
+      const chosen = senderSelect?.value;
+      senderBox.replaceChildren();
+      senderSelect = null;
+      if (own.length > 1) {
+        senderSelect = field(senderBox, "select", "room-sender", "Posting as");
+        own.forEach((id) => senderSelect.append(new Option(nameOf(id), id)));
+        if (own.includes(chosen)) senderSelect.value = chosen;
+      } else if (own.length) {
+        senderBox.append(element("p", "chat-sender", `Posting as ${nameOf(own[0])}`));
+      }
+    };
+    const chatInput = field(chatForm, "textarea", "room-message", "Message the room", { rows: 3, maxLength: 1000, required: true, placeholder: "Share the timeline, budget range, or a question…" });
+    chatInput.classList.add("chat-input");
+    const chatStatus = element("p", "chat-status");
+    chatStatus.setAttribute("role", "status");
+    const send = element("button", "button button-primary", "Send to the room");
+    send.type = "submit";
+    const chatActions = element("div", "chat-actions");
+    chatActions.append(send, dictationButton(chatInput, chatStatus));
+    chatForm.append(chatActions, chatStatus);
+    chatInput.addEventListener("input", () => chatInput.setCustomValidity(""));
+    chatForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const text = plainText(chatInput.value, true).slice(0, 1000);
+      const from = senderSelect ? senderSelect.value : mine()[0];
+      if (!text) {
+        chatInput.setCustomValidity("Write a message before sending.");
+        chatInput.reportValidity();
+        return;
+      }
+      send.disabled = true;
+      chatStatus.textContent = "Sending…";
+      try {
+        await postSharedRoomMessage(current, from, text);
+      } catch (error) {
+        chatStatus.textContent = error.message;
+        send.disabled = false;
+        return;
+      }
+      chatInput.value = "";
+      chatStatus.textContent = "Sent to the room.";
+      send.disabled = false;
+      thread.scrollTop = thread.scrollHeight;
+      if (await reload()) update();
+      thread.scrollTop = thread.scrollHeight;
+      chatInput.focus();
+    });
+    conversation.block.append(chatForm);
+
+    const proposals = section(mainColumn, "proposals", "Proposals", isHost
+      ? "Companies that joined send proposals here. Only you and the company that sent a proposal can read it."
+      : `Send ${hostName} a proposal. Only ${hostName} and your company can read it; other companies in the room can't.`);
+    const proposalList = element("div", "room-proposals");
+    proposals.content.append(proposalList);
+    const statusLabels = { new: isHost ? "New" : "Sent", shortlisted: "Shortlisted", declined: "Declined" };
+    proposals.draw = () => {
+      proposalList.replaceChildren();
+      const items = detail().proposals;
+      if (!items.length) {
+        proposalList.append(element("p", "room-copy", isHost ? "No proposals yet. Companies that joined can send them here." : "You haven't sent a proposal yet."));
+        drawProposalSender();
+        return;
+      }
+      const order = { shortlisted: 0, new: 1, declined: 2 };
+      const list = element("ul", "room-proposal-list");
+      [...items].sort((a, b) => order[a.status] - order[b.status] || Date.parse(b.at) - Date.parse(a.at)).forEach((proposal) => {
+        const card = element("li", `room-proposal is-${proposal.status}`);
+        const top = element("div", "room-proposal-head");
+        top.append(element("strong", "", proposal.title), element("span", "room-tag", statusLabels[proposal.status]));
+        card.append(top, element("p", "feed-meta", `${nameOf(proposal.from)} · sent ${shortDate(proposal.at)}`));
+        if (proposal.price || proposal.timeline) {
+          const facts = element("dl", "event-facts");
+          if (proposal.price) facts.append(element("dt", "", "Price"), element("dd", "", proposal.price));
+          if (proposal.timeline) facts.append(element("dt", "", "Timeline"), element("dd", "", proposal.timeline));
+          card.append(facts);
+        }
+        card.append(element("p", "room-proposal-summary", proposal.summary));
+        const actions = element("div", "room-proposal-actions");
+        if (isHost) {
+          const shortlisted = proposal.status === "shortlisted";
+          const declined = proposal.status === "declined";
+          actions.append(
+            button(shortlisted ? "Remove from shortlist" : "Shortlist", "button button-secondary", `shortlist-${proposal.id}`, (node) => act(node,
+              () => setSharedProposalStatus(proposal, shortlisted ? "new" : "shortlisted"), shortlisted ? "Removed from the shortlist." : "Added to the shortlist."),
+            `${shortlisted ? "Remove from shortlist" : "Shortlist"}: ${proposal.title}`),
+            button(declined ? "Reconsider" : "Decline", "button button-secondary", `decline-${proposal.id}`, (node) => act(node,
+              () => setSharedProposalStatus(proposal, declined ? "new" : "declined"), declined ? "Proposal moved back to new." : "Proposal declined."),
+            `${declined ? "Reconsider" : "Decline"}: ${proposal.title}`),
+          );
+        } else if (mine().includes(proposal.from)) {
+          actions.append(confirmButton("Withdraw", "Tap again to withdraw", `withdraw-${proposal.id}`, (node) => act(node,
+            () => withdrawSharedProposal(proposal), "Proposal withdrawn."), proposal.title));
+        }
+        card.append(actions);
+        list.append(card);
+      });
+      proposalList.append(list);
+      drawProposalSender();
+    };
+    let drawProposalSender = () => {};
+    if (!isHost) {
+      const proposalForm = element("form", "room-form room-proposal-form");
+      const fromBox = element("div");
+      proposalForm.append(fromBox);
+      let fromSelect = null;
+      drawProposalSender = () => {
+        const own = mine();
+        const chosen = fromSelect?.value;
+        fromBox.replaceChildren();
+        fromSelect = null;
+        if (own.length > 1) {
+          fromSelect = field(fromBox, "select", "proposal-from", "From");
+          own.forEach((id) => fromSelect.append(new Option(nameOf(id), id)));
+          if (own.includes(chosen)) fromSelect.value = chosen;
+        } else if (own.length) {
+          fromBox.append(element("p", "chat-sender", `From ${nameOf(own[0])}`));
+        }
+      };
+      const proposalTitle = field(proposalForm, "input", "proposal-title", "Proposal title", { maxLength: 100, required: true, placeholder: "Platform build, phase one" });
+      const proposalRow = element("div", "room-form-row");
+      const priceBox = element("div");
+      const price = field(priceBox, "input", "proposal-price", "Price (optional)", { maxLength: 40, placeholder: "$48,000 fixed" });
+      const timelineBox = element("div");
+      const timeline = field(timelineBox, "input", "proposal-timeline", "Timeline (optional)", { maxLength: 60, placeholder: "10 weeks" });
+      proposalRow.append(priceBox, timelineBox);
+      proposalForm.append(proposalRow);
+      const summary = field(proposalForm, "textarea", "proposal-summary", "Approach", { rows: 4, maxLength: 800, required: true, placeholder: "What your company will deliver and how." });
+      summary.classList.add("chat-input");
+      const proposalStatus = element("p", "chat-status");
+      proposalStatus.setAttribute("role", "status");
+      const sendProposal = element("button", "button button-primary", `Send to ${hostName}`);
+      sendProposal.type = "submit";
+      const proposalActions = element("div", "chat-actions");
+      proposalActions.append(sendProposal, dictationButton(summary, proposalStatus));
+      proposalForm.append(proposalActions, proposalStatus);
+      proposalForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const fail = (message, input) => {
+          proposalStatus.textContent = message;
+          input.focus();
+        };
+        const from = fromSelect ? fromSelect.value : mine()[0];
+        const titleText = plainText(proposalTitle.value).slice(0, 100);
+        const approach = plainText(summary.value, true).slice(0, 800);
+        if (!titleText) return fail("Give the proposal a title.", proposalTitle);
+        if (!approach) return fail("Describe the approach.", summary);
+        if (detail().proposals.filter((proposal) => proposal.from === from).length >= MAX_SHARED_ROOM_PROPOSALS) {
+          return fail(`A company can send up to ${MAX_SHARED_ROOM_PROPOSALS} proposals per room. Withdraw one first.`, sendProposal);
+        }
+        sendProposal.disabled = true;
+        proposalStatus.textContent = "Sending…";
+        try {
+          await sendSharedProposal(current, from, { title: titleText, price: plainText(price.value).slice(0, 40), timeline: plainText(timeline.value).slice(0, 60), summary: approach });
+        } catch (error) {
+          sendProposal.disabled = false;
+          return fail(error.message, sendProposal);
+        }
+        sendProposal.disabled = false;
+        proposalForm.reset();
+        proposalStatus.textContent = `Sent. Only ${hostName} and your company can read it.`;
+        if (await reload()) update();
+        proposalTitle.focus();
+      });
+      const proposalDetails = element("details", "room-add");
+      proposalDetails.append(element("summary", "", "Send a proposal"), proposalForm);
+      proposals.block.append(proposalDetails);
+    }
+
+    const meetings = section(sideColumn, "meetings", "Meetings", isHost
+      ? "Schedule video calls with the team. Paste a Zoom, Teams, or Google Meet link; video calls inside BOND are planned."
+      : "The host schedules meetings. Join links and calendar files appear here.");
+    const meetingList = element("div");
+    meetings.content.append(meetingList);
+    const teamNames = () => joinNames([current.owner, ...current.members.filter((member) => member.status === "joined").map((member) => member.companyId)].map(nameOf));
+    meetings.draw = () => {
+      meetingList.replaceChildren();
+      const items = detail().meetings;
+      if (!items.length) {
+        meetingList.append(element("p", "room-copy", "No meetings yet."));
+        return;
+      }
+      const list = element("ul", "room-meetings");
+      [...items].sort((a, b) => Number(eventIsUpcoming(b)) - Number(eventIsUpcoming(a)) || Date.parse(a.start) - Date.parse(b.start)).forEach((meeting) => {
+        const upcoming = eventIsUpcoming(meeting);
+        const item = element("li", upcoming ? "room-meeting" : "room-meeting is-past");
+        item.append(element("strong", "", meeting.topic), element("span", "feed-meta", `${eventWhen(meeting, { long: true })}${upcoming ? "" : " · Ended"}`));
+        const actions = element("div", "room-proposal-actions");
+        if (meeting.link && upcoming) {
+          const join = element("a", "button button-secondary", "Join meeting");
+          join.href = meeting.link;
+          join.target = "_blank";
+          join.rel = "noopener noreferrer";
+          actions.append(join);
+        }
+        if (upcoming) {
+          actions.append(button("Add to calendar", "button button-secondary", `calendar-${meeting.id}`, () => downloadCalendar({
+            uid: `room-meeting-${meeting.id}`, title: `${current.title}: ${meeting.topic}`, start: meeting.start, end: eventEnd(meeting),
+            location: meeting.link || "Video meeting",
+            details: `Opportunity Room on BOND with ${teamNames()}.${meeting.link ? `\n\nJoin: ${meeting.link}` : ""}`,
+          }), `Add ${meeting.topic} to your calendar`));
+        }
+        if (isHost) {
+          actions.append(confirmButton(upcoming ? "Cancel" : "Remove", upcoming ? "Tap again to cancel" : "Tap again to remove", `cancel-${meeting.id}`, (node) => act(node,
+            () => cancelSharedMeeting(meeting), upcoming ? "Meeting canceled. The room was told." : "Meeting removed."), meeting.topic));
+        }
+        item.append(actions);
+        list.append(item);
+      });
+      meetingList.append(list);
+    };
+    if (isHost) {
+      const meetingForm = element("form", "room-form room-meeting-form");
+      const topic = field(meetingForm, "input", "meeting-topic", "Topic", { maxLength: 100, required: true, defaultValue: "Project kickoff" });
+      const meetingRow = element("div", "room-form-row");
+      const dateBox = element("div");
+      const tomorrow = new Date(Date.now() + DAY_MS);
+      const meetingDate = field(dateBox, "input", "meeting-date", "Date", { type: "date", required: true, value: localDateValue(tomorrow), min: localDateValue(new Date()), max: localDateValue(new Date(Date.now() + 365 * DAY_MS)) });
+      const timeBox = element("div");
+      const meetingTime = field(timeBox, "input", "meeting-time", "Start time", { type: "time", required: true, value: "10:00" });
+      meetingRow.append(dateBox, timeBox);
+      meetingForm.append(meetingRow);
+      const length = field(meetingForm, "select", "meeting-length", "Length");
+      meetingDurations.forEach((minutes) => length.append(new Option(minutes < 60 ? `${minutes} minutes` : minutes === 60 ? "1 hour" : `${minutes / 60} hours`, String(minutes))));
+      length.value = "30";
+      const meetingLink = field(meetingForm, "input", "meeting-link", "Video link (optional)", { type: "url", maxLength: 300, placeholder: "https://…" });
+      const meetingStatus = element("p", "chat-status");
+      meetingStatus.setAttribute("role", "status");
+      const schedule = element("button", "button button-primary", "Schedule meeting");
+      schedule.type = "submit";
+      meetingForm.append(schedule, meetingStatus);
+      meetingForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const fail = (message, input) => {
+          meetingStatus.textContent = message;
+          input.focus();
+        };
+        const topicText = plainText(topic.value).slice(0, 100);
+        const start = /^\d{4}-\d{2}-\d{2}$/.test(meetingDate.value) && /^\d{2}:\d{2}$/.test(meetingTime.value) ? new Date(`${meetingDate.value}T${meetingTime.value}`) : null;
+        const link = normalizeEventLink(meetingLink.value);
+        if (!topicText) return fail("Add a topic for the meeting.", topic);
+        if (!start || !Number.isFinite(start.getTime()) || start.getTime() <= Date.now()) return fail("Pick a date and start time in the future.", meetingDate);
+        if (start.getTime() > Date.now() + 366 * DAY_MS) return fail("Pick a date within the next year.", meetingDate);
+        if (link === null || link.length > 300) return fail("Use a secure https:// video link of up to 300 characters.", meetingLink);
+        if (detail().meetings.length >= MAX_ROOM_MEETINGS) return fail(`A room holds up to ${MAX_ROOM_MEETINGS} meetings. Remove an old one first.`, schedule);
+        const duration = meetingDurations.includes(Number(length.value)) ? Number(length.value) : 30;
+        schedule.disabled = true;
+        meetingStatus.textContent = "Scheduling…";
+        try {
+          await scheduleSharedMeeting(current, { topic: topicText, start: start.toISOString(), duration, link });
+        } catch (error) {
+          schedule.disabled = false;
+          return fail(error.message, schedule);
+        }
+        schedule.disabled = false;
+        meetingForm.reset();
+        meetingDate.value = localDateValue(tomorrow);
+        meetingTime.value = "10:00";
+        length.value = "30";
+        meetingStatus.textContent = `Scheduled for ${eventWhen({ start: start.toISOString(), duration })}. Everyone in the room can see it.`;
+        if (await reload()) update();
+        topic.focus();
+      });
+      const meetingDetails = element("details", "room-add");
+      meetingDetails.append(element("summary", "", "Schedule a meeting"), meetingForm);
+      meetings.block.append(meetingDetails);
+    }
+
+    const closing = element("section", "room-close");
+    if (isHost) {
+      closing.setAttribute("aria-label", "Close this room");
+      closing.append(element("p", "room-copy", "Done with this project? Closing the room deletes its conversation, meetings, and proposals for everyone."));
+      closing.append(confirmButton("Close this room", "Tap again to close and delete", "close-room", async (node) => {
+        node.disabled = true;
+        try {
+          await closeSharedRoom(current);
+        } catch (error) {
+          node.disabled = false;
+          announce(error.message);
+          return;
+        }
+        goWithFlash("dashboard.html#rooms", `"${current.title}" was closed and deleted.`);
+      }));
+    } else {
+      closing.setAttribute("aria-label", "Leave this room");
+      closing.append(element("p", "room-copy", "Leaving removes your company from the room and withdraws its proposals. The host can invite you again."));
+      for (const companyId of mine()) {
+        closing.append(confirmButton(mine().length > 1 ? `Leave as ${nameOf(companyId)}` : "Leave this room", "Tap again to leave", `leave-${companyId}`, async (node) => {
+          node.disabled = true;
+          try {
+            await leaveSharedRoom(current, companyId);
+          } catch (error) {
+            node.disabled = false;
+            announce(error.message);
+            return;
+          }
+          goWithFlash("dashboard.html#rooms", `${nameOf(companyId)} left "${current.title}".`);
+        }));
+      }
+    }
+    sideColumn.append(closing);
+    finish(container, head);
+  }
+
+  function renderOpportunityRoom() {
+    const container = document.getElementById("opportunity-room");
+    if (!container) return;
+    const requestedId = new URLSearchParams(window.location.search).get("id");
+    if (SHARED_ROOM_ID_PATTERN.test(requestedId || "")) {
+      renderSharedRoom(container, requestedId);
+      return;
+    }
+    container.replaceChildren();
+    const room = opportunityRooms.find((entry) => entry.id === requestedId);
+    if (!room) {
+      const notice = element("section", "profile-not-found");
+      notice.append(element("p", "dialog-kicker", "Opportunity Room"), element("h1", "", requestedId ? "This room isn't available here." : "Choose an Opportunity Room."));
+      notice.append(element("p", "dialog-copy", requestedId
+        ? "Demo rooms are saved in the browser where they were opened, so this one may be in another browser or it was closed. Shared rooms appear on your dashboard after you sign in."
+        : "Describe a project and BOND suggests companies to build it with, then opens a private room for the team."));
+      const start = element("a", "button button-primary", "Start an Opportunity Room");
+      start.href = "index.html#rooms";
+      const dashboard = element("a", "company-link", "Your rooms on the dashboard");
+      dashboard.href = "dashboard.html#rooms";
+      notice.append(start, dashboard);
+      container.append(notice);
+      return;
+    }
+    document.title = `${room.title} — BOND Opportunity Room`;
+    const ownerProfile = resolveProfile(room.owner);
+    const ownerName = ownerProfile ? ownerProfile.name : "You";
+    const save = () => {
+      room.updated = new Date().toISOString();
+      return saveRooms();
+    };
+    const saved = (persisted, text) => persisted ? text : `${text} Saved for this visit only; browser storage is full or unavailable.`;
+    const memberIds = () => room.members.map((member) => member.companyId);
+    const { mainColumn, sideColumn, button, confirmButton, field, section, update, finish } = roomScaffold();
+
+    const head = element("header", "room-head");
+    head.append(element("p", "dialog-kicker", "Opportunity Room · Demo"), element("h1", "", room.title));
+    head.append(element("p", "room-meta", `Opened ${shortDate(room.at)} by ${ownerProfile ? ownerProfile.name : "you"}`));
+    head.append(element("p", "room-privacy", "This room is a demo saved in this browser. To share a room with other companies, sign in and open it as one of your published companies."));
 
     const project = section(mainColumn, "project", "Project");
     let editingNeeds = false;
@@ -5383,7 +6166,7 @@
         });
         body.append(form);
       }
-      body.append(element("p", "form-hint", "Invitations are saved here and sent when BOND launches accounts."));
+      body.append(element("p", "form-hint", "This is a demo: invitations stay in this browser and aren't sent."));
     };
 
     const conversation = section(mainColumn, "conversation", "Conversation", "Share the brief, timelines, and questions with the whole team.");
@@ -5432,7 +6215,7 @@
       conversation.draw();
       chatInput.value = "";
       chatInput.focus();
-      chatStatus.textContent = saved(persisted, "Saved in this room. The team sees it when BOND launches accounts.");
+      chatStatus.textContent = saved(persisted, "Saved in this demo room. Only this browser can see it.");
     });
     conversation.block.append(chatForm);
 
@@ -5474,7 +6257,7 @@
       addProposal.disabled = !room.members.length;
       proposalList.replaceChildren();
       if (!room.proposals.length) {
-        proposalList.append(element("p", "room-copy", "No proposals yet. When BOND launches, invited companies submit them here. To see how comparing works, add a sample one below."));
+        proposalList.append(element("p", "room-copy", "No proposals yet. In a shared room, companies that join send them here. To see how comparing works, add a sample one below."));
         return;
       }
       const order = { shortlisted: 0, new: 1, declined: 2 };
@@ -5639,11 +6422,7 @@
       window.location.href = "dashboard.html#rooms";
     }));
     sideColumn.append(closing);
-
-    nav.replaceChildren(...[...mainColumn.children, ...sideColumn.children]
-      .map((block) => block.id && nav.querySelector(`a[href="#${block.id}"]`)).filter(Boolean));
-    container.append(head, nav, layout);
-    Object.values(parts).forEach((part) => part.draw());
+    finish(container, head);
   }
 
   function dashboardSection(container, id, title, copy) {
@@ -5709,9 +6488,20 @@
       main.append(list);
     }
     const actions = element("div", "dashboard-row-actions");
-    if (action) actions.append(action);
+    if (action) actions.append(...[action].flat());
     row.append(main, actions);
     return row;
+  }
+
+  function sharedRoomSummary(room) {
+    const joined = room.members.filter((member) => member.status === "joined").length;
+    const waiting = room.members.filter((member) => member.status === "invited").length;
+    return [
+      sharedRoomRole(room).role === "host" ? "You host" : `Hosted by ${resolveProfile(room.owner)?.name || "a BOND company"}`,
+      `${joined} ${joined === 1 ? "company" : "companies"} joined`,
+      waiting ? `${waiting} invited` : "",
+      `Updated ${shortDate(room.updated)}`,
+    ].filter(Boolean).join(" · ");
   }
 
   function renderDashboard() {
@@ -5737,6 +6527,8 @@
     const hosting = allEvents().filter((event) => hostingEvent(event) && resolveProfile(event.companyId));
     const hostingUpcoming = hosting.filter(eventIsUpcoming);
     const attending = allEvents().filter((event) => myRsvp(event) && eventIsUpcoming(event) && resolveProfile(event.companyId));
+    const roomInvitations = sharedRoomInvitations();
+    const sharedRooms = sharedRoomsJoined();
 
     const head = element("header", "dashboard-head");
     head.append(element("p", "dialog-kicker", "Your BOND"), element("h1", "", "Your dashboard"));
@@ -5753,6 +6545,7 @@
       ...(unreadConversations ? [[unreadConversations, unreadConversations === 1 ? "New message" : "New messages", "messages"]] : []),
       [postedByYou.length, "Opportunities posted", "opportunities"],
       [responsesSent, responsesSent === 1 ? "Response sent" : "Responses sent", "opportunities"],
+      ...(roomInvitations.length ? [[roomInvitations.length, roomInvitations.length === 1 ? "Room invitation" : "Room invitations", "rooms"]] : []),
       [hostingUpcoming.length, "Events hosting", "hosting"],
       [attending.length, "Events attending", "events"],
       ...(own.some((profile) => profile.member) && !account.viewCountsError
@@ -5902,15 +6695,64 @@
       dashboardEmpty(opportunities, "Respond to a request on the Opportunity Board to keep track of it here.", dashboardLink("Open the Opportunity Board", "index.html#opportunities"));
     }
 
-    const roomsBlock = dashboardSection(container, "rooms", "Opportunity Rooms", "Private project rooms with the companies you invited: conversation, meetings, and proposals.");
+    const roomsBlock = dashboardSection(container, "rooms", "Opportunity Rooms", account.user
+      ? "Private project rooms for conversation, meetings, and proposals with the companies you invite or that invite you."
+      : "Private project rooms with the companies you invited: conversation, meetings, and proposals.");
+    if (account.user && account.roomsError) roomsBlock.append(element("p", "form-hint", "Your shared rooms couldn't load. Refresh the page to try again."));
+    if (roomInvitations.length) {
+      roomsBlock.append(element("h3", "detail-label", "Invitations"));
+      const list = element("ul", "dashboard-list");
+      for (const room of roomInvitations) {
+        const hostName = resolveProfile(room.owner)?.name || "A BOND company";
+        for (const member of room.members.filter((item) => sharedRoomRole(room).as.includes(item.companyId))) {
+          const companyName = resolveProfile(member.companyId)?.name || "your company";
+          const answer = async (button, status) => {
+            button.disabled = true;
+            try {
+              await answerRoomInvitation(room, member.companyId, status);
+            } catch (error) {
+              button.disabled = false;
+              announce(error.message);
+              return;
+            }
+            if (status === "joined") {
+              goWithFlash(roomHref(room), `${companyName} joined "${room.title}".`);
+              return;
+            }
+            await loadMemberRooms();
+            renderAccountButton();
+            renderDashboard();
+            announce(`You declined the invitation to "${room.title}". ${hostName} sees that you declined.`);
+          };
+          list.append(dashboardItemRow(room.title, `${hostName} invited ${companyName} · ${shortDate(member.at)}`, [
+            dashboardLink("View invitation", roomHref(room), "button button-secondary"),
+            dashboardButton("Accept", "button button-primary", `room-accept-${room.id}-${member.companyId}`, (button) => answer(button, "joined"), `Accept the invitation to ${room.title} for ${companyName}`),
+            dashboardButton("Decline", "button button-secondary", `room-decline-${room.id}-${member.companyId}`, (button) => answer(button, "declined"), `Decline the invitation to ${room.title} for ${companyName}`),
+          ], ["Invitation"]));
+        }
+      }
+      roomsBlock.append(list);
+    }
+    if (sharedRooms.length) {
+      if (roomInvitations.length) roomsBlock.append(element("h3", "detail-label", "Your shared rooms"));
+      const list = element("ul", "dashboard-list");
+      for (const room of sharedRooms) {
+        list.append(dashboardItemRow(room.title, sharedRoomSummary(room),
+          dashboardLink("Open room", roomHref(room), "button button-secondary"), sharedRoomHasNews(room) ? ["New activity"] : []));
+      }
+      roomsBlock.append(list);
+    }
     if (opportunityRooms.length) {
+      if (sharedRooms.length || roomInvitations.length) roomsBlock.append(element("h3", "detail-label", "Demo rooms in this browser"));
       const list = element("ul", "dashboard-list");
       for (const room of opportunityRooms) {
         list.append(dashboardItemRow(room.title, roomSummary(room), dashboardLink("Open room", roomHref(room), "button button-secondary")));
       }
       roomsBlock.append(list);
+    }
+    if (opportunityRooms.length || sharedRooms.length || roomInvitations.length) {
       const more = element("p", "form-hint");
-      more.append(dashboardLink("Start another Opportunity Room", "index.html#rooms"));
+      more.append(dashboardLink(opportunityRooms.length || sharedRooms.length ? "Start another Opportunity Room" : "Start an Opportunity Room", "index.html#rooms"));
       roomsBlock.append(more);
     } else {
       dashboardEmpty(roomsBlock, "Describe a project and BOND suggests companies to build it with, then opens a private room for the team.",
@@ -6171,6 +7013,7 @@
     client: null, user: null, ownIds: new Set(), follows: new Set(), saves: new Set(), rsvpRows: [], eventLinks: Object.create(null),
     viewCounts: Object.create(null), viewCountsError: false, viewsSent: new Set(), loaded: false, error: "",
     conversations: [], conversationsError: false, threads: Object.create(null),
+    rooms: [], roomsError: false, roomsToken: null, roomsUser: null, roomDetails: Object.create(null),
   };
 
   function loadScript(src) {
@@ -6738,6 +7581,277 @@
     forgetConversation(conversation);
   }
 
+  function roomNeedIds(value) {
+    return Array.isArray(value) ? [...new Set(value.filter((id) => typeof id === "string" && needById(id)))] : [];
+  }
+
+  function memberIdFromRow(value) {
+    return typeof value === "string" && MEMBER_ID_PATTERN.test(`m-${value}`) ? `m-${value}` : "";
+  }
+
+  function sharedRoomMemberFromRow(row) {
+    const companyId = memberIdFromRow(row?.profile_id);
+    const at = storedTime(row?.invited_at);
+    if (!companyId || !at || !["invited", "joined", "declined"].includes(row.status)) return null;
+    return { companyId, needs: roomNeedIds(row.needs), status: row.status, at, respondedAt: storedTime(row.responded_at) };
+  }
+
+  function sharedRoomFromRow(row, memberRows) {
+    const owner = memberIdFromRow(row?.host_profile_id);
+    const id = typeof row?.id === "string" ? `r-${row.id}` : "";
+    const title = plainText(row?.title).slice(0, 80);
+    const at = storedTime(row?.created_at);
+    if (!SHARED_ROOM_ID_PATTERN.test(id) || !owner || !title || !at) return null;
+    return {
+      id, remoteId: row.id, shared: true, title, brief: plainText(row.brief, true).slice(0, 1500), needs: roomNeedIds(row.needs),
+      city: plainText(row.city).slice(0, 80), preference: ownershipOptions.includes(row.preference) ? row.preference : "",
+      owner, at, updated: storedTime(row.updated_at) || at,
+      members: memberRows.map(sharedRoomMemberFromRow).filter(Boolean).slice(0, MAX_ROOM_MEMBERS),
+    };
+  }
+
+  // The caller's place in a shared room and the companies they act as there.
+  function sharedRoomRole(room) {
+    if (account.ownIds.has(room.owner.slice(2))) return { role: "host", as: [room.owner] };
+    const mine = room.members.filter((member) => account.ownIds.has(member.companyId.slice(2)));
+    const joined = mine.filter((member) => member.status === "joined").map((member) => member.companyId);
+    if (joined.length) return { role: "member", as: joined };
+    const invited = mine.filter((member) => member.status === "invited").map((member) => member.companyId);
+    return invited.length ? { role: "invited", as: invited } : { role: "", as: [] };
+  }
+
+  function sharedRoomInvitations() {
+    return account.user ? account.rooms.filter((room) => sharedRoomRole(room).role === "invited") : [];
+  }
+
+  function sharedRoomsJoined() {
+    return account.user ? account.rooms.filter((room) => ["host", "member"].includes(sharedRoomRole(room).role)) : [];
+  }
+
+  // Only the signed-in account's last visits are kept; another account in this browser starts fresh.
+  function readRoomsSeen() {
+    const stored = readStoredValue(ROOMS_SEEN_KEY);
+    const seen = stored?.user === account.user?.id ? stored.seen : null;
+    return seen && typeof seen === "object" && !Array.isArray(seen) ? seen : {};
+  }
+
+  function sharedRoomHasNews(room) {
+    const seen = storedTime(readRoomsSeen()[room.id]);
+    return !seen || Date.parse(room.updated) > Date.parse(seen);
+  }
+
+  function markSharedRoomSeen(room) {
+    const known = new Set(account.rooms.map((item) => item.id));
+    const seen = Object.fromEntries(Object.entries(readRoomsSeen()).filter(([id]) => known.has(id) && SHARED_ROOM_ID_PATTERN.test(id)));
+    seen[room.id] = room.updated;
+    if (account.user) writeStoredValue(ROOMS_SEEN_KEY, { user: account.user.id, seen });
+  }
+
+  async function loadMemberRooms() {
+    const userId = account.user?.id;
+    const token = {};
+    account.roomsToken = token;
+    if (!userId) {
+      account.rooms = [];
+      account.roomDetails = Object.create(null);
+      account.roomsError = false;
+      return true;
+    }
+    const [rooms, members] = await Promise.all([
+      account.client.from(ROOMS_TABLE).select(ROOM_COLUMNS).order("updated_at", { ascending: false }).limit(100),
+      account.client.from(ROOM_MEMBERS_TABLE).select(ROOM_MEMBER_COLUMNS).order("invited_at", { ascending: true }).limit(1000),
+    ]);
+    if (account.roomsToken !== token || account.user?.id !== userId) return false;
+    if (rooms.error || members.error) {
+      account.roomsError = true;
+      return false;
+    }
+    const byRoom = new Map();
+    for (const row of members.data || []) {
+      if (!byRoom.has(row.room_id)) byRoom.set(row.room_id, []);
+      byRoom.get(row.room_id).push(row);
+    }
+    account.rooms = (rooms.data || []).map((row) => sharedRoomFromRow(row, byRoom.get(row.id) || [])).filter(Boolean);
+    for (const id of Object.keys(account.roomDetails)) if (!account.rooms.some((room) => room.id === id)) delete account.roomDetails[id];
+    account.roomsUser = userId;
+    account.roomsError = false;
+    return true;
+  }
+
+  function sharedRoomMessageFromRow(row) {
+    const at = storedTime(row?.created_at);
+    const text = plainText(row?.body, true).slice(0, 1000);
+    if (typeof row?.id !== "string" || (row.kind !== "message" && row.kind !== "note") || !at || !text) return null;
+    return { id: row.id, from: memberIdFromRow(row.profile_id), text, at, note: row.kind === "note" };
+  }
+
+  function sharedRoomMeetingFromRow(row) {
+    const start = storedTime(row?.starts_at);
+    const topic = plainText(row?.topic).slice(0, 100);
+    const link = normalizeEventLink(row?.link);
+    if (typeof row?.id !== "string" || !start || !topic || !meetingDurations.includes(row.duration_minutes) || link === null) return null;
+    return { id: row.id, topic, start, duration: row.duration_minutes, link, at: storedTime(row.created_at) || start };
+  }
+
+  function sharedRoomProposalFromRow(row) {
+    const from = memberIdFromRow(row?.profile_id);
+    const title = plainText(row?.title).slice(0, 100);
+    const summary = plainText(row?.summary, true).slice(0, 800);
+    const at = storedTime(row?.created_at);
+    if (typeof row?.id !== "string" || !from || !title || !summary || !at || !["new", "shortlisted", "declined"].includes(row.status)) return null;
+    return { id: row.id, from, title, summary, at, status: row.status, price: plainText(row.price).slice(0, 40), timeline: plainText(row.timeline).slice(0, 60) };
+  }
+
+  // Invited companies can't read a room's conversation, meetings, or proposals, so there's nothing to load for them.
+  async function loadSharedRoomDetail(room) {
+    const userId = account.user?.id;
+    if (!userId || !["host", "member"].includes(sharedRoomRole(room).role)) return false;
+    const rows = (table, columns, order, ascending, limit) => account.client.from(table).select(columns)
+      .eq("room_id", room.remoteId).order(order, { ascending }).limit(limit);
+    const [messages, meetings, proposals] = await Promise.all([
+      rows(ROOM_MESSAGES_TABLE, ROOM_MESSAGE_COLUMNS, "created_at", false, 300),
+      rows(ROOM_MEETINGS_TABLE, ROOM_MEETING_COLUMNS, "starts_at", true, 50),
+      rows(ROOM_PROPOSALS_TABLE, ROOM_PROPOSAL_COLUMNS, "created_at", false, 100),
+    ]);
+    if (account.user?.id !== userId || messages.error || meetings.error || proposals.error) return false;
+    account.roomDetails[room.id] = {
+      messages: (messages.data || []).map(sharedRoomMessageFromRow).filter(Boolean).reverse(),
+      meetings: (meetings.data || []).map(sharedRoomMeetingFromRow).filter(Boolean),
+      proposals: (proposals.data || []).map(sharedRoomProposalFromRow).filter(Boolean),
+    };
+    return true;
+  }
+
+  function clearRoomState() {
+    account.roomsToken = {};
+    account.roomsUser = null;
+    account.rooms = [];
+    account.roomDetails = Object.create(null);
+    account.roomsError = false;
+  }
+
+  const ROOM_SERVER_MESSAGES = [
+    "You can only open a room as one of your own published companies.", "You can have up to 20 open rooms. Close one first.",
+    "This invitation was already answered.", "You can't invite your own company.", "A room holds up to 8 invited companies.",
+    "Post as one of your companies in this room.", "Pick a date and start time in the future.", "Pick a date within the next year.",
+    "A room holds up to 20 meetings. Remove an old one first.", "Only companies that joined this room can send proposals.",
+    "A company can send up to 3 proposals per room. Withdraw one first.",
+  ];
+
+  function roomErrorMessage(error, fallback) {
+    const text = String(error?.message || "");
+    if (/^You can (open|send) up to \d+ (rooms|room invitations|room messages|proposals) a day\.$/.test(text)) return `${text} Try again tomorrow.`;
+    if (ROOM_SERVER_MESSAGES.includes(text)) return text;
+    if (error?.code === "23514") return TEXT_REJECTED;
+    if (error?.code === "23503") return "This room was closed, or your company is no longer part of it.";
+    if (error?.code === "42501" || error?.status === 401) return "You can't do that in this room anymore, or your sign-in expired. Refresh the page and try again.";
+    return fallback;
+  }
+
+  async function roomRequest(action, request, fallback, { expectOne = false, gone = "" } = {}) {
+    if (!account.client || !account.user) throw new Error(`Your sign-in expired. Sign in again, then ${action}.`);
+    const userId = account.user.id;
+    const { error, count } = await request(account.client);
+    if (account.user?.id !== userId) throw new Error("You signed out before that finished. Sign in again to check the room.");
+    if (error) throw new Error(roomErrorMessage(error, fallback));
+    if (expectOne && count !== 1) throw new Error(gone || "That already changed. Refresh the page to see the room as it is now.");
+  }
+
+  async function refreshSharedRoom(room) {
+    await loadMemberRooms();
+    const current = account.rooms.find((item) => item.id === room.id);
+    if (current) await loadSharedRoomDetail(current);
+    return current || null;
+  }
+
+  // Inserts don't ask for the new row back: the room's read policy can't see a row its own statement is still writing.
+  async function openSharedRoom({ title, brief, needs, city, preference, host, invitees }) {
+    if (typeof crypto === "undefined" || typeof crypto.randomUUID !== "function") {
+      throw new Error("This browser can't open shared rooms. Update it or try another browser.");
+    }
+    const remoteId = crypto.randomUUID();
+    await roomRequest("open the room", (client) => client.from(ROOMS_TABLE)
+      .insert({ id: remoteId, host_profile_id: host.remoteId, title, brief, needs, city, preference }),
+    "The room couldn't be opened. Check your connection and try again.");
+    let inviteError = "";
+    if (invitees.length) {
+      try {
+        await roomRequest("invite companies", (client) => client.from(ROOM_MEMBERS_TABLE)
+          .insert(invitees.map((entry) => ({ room_id: remoteId, profile_id: entry.profile.remoteId, needs: entry.needs }))),
+        "The invitations couldn't be sent. Invite the companies from the room's Team section.");
+      } catch (error) {
+        inviteError = error.message;
+      }
+    }
+    await loadMemberRooms();
+    return { id: `r-${remoteId}`, inviteError };
+  }
+
+  async function inviteToSharedRoom(room, profile, needs) {
+    await roomRequest("invite the company", (client) => client.from(ROOM_MEMBERS_TABLE)
+      .insert({ room_id: room.remoteId, profile_id: profile.remoteId, needs }),
+    `${profile.name} couldn't be invited. Check your connection and try again.`);
+  }
+
+  async function answerRoomInvitation(room, companyId, status) {
+    await roomRequest("answer the invitation", (client) => client.from(ROOM_MEMBERS_TABLE)
+      .update({ status }, { count: "exact" }).eq("room_id", room.remoteId).eq("profile_id", companyId.slice(2)),
+    "Your answer couldn't be saved. Check your connection and try again.",
+    { expectOne: true, gone: "This invitation is no longer open. The host may have closed the room or withdrawn it." });
+  }
+
+  async function leaveSharedRoom(room, companyId) {
+    await roomRequest("change the team", (client) => client.from(ROOM_MEMBERS_TABLE)
+      .delete({ count: "exact" }).eq("room_id", room.remoteId).eq("profile_id", companyId.slice(2)),
+    "The team couldn't be changed. Check your connection and try again.", { expectOne: true });
+  }
+
+  async function postSharedRoomMessage(room, companyId, body) {
+    await roomRequest("send your message", (client) => client.from(ROOM_MESSAGES_TABLE)
+      .insert({ room_id: room.remoteId, profile_id: companyId.slice(2), body }),
+    "Your message couldn't be sent. Check your connection and try again.");
+  }
+
+  async function scheduleSharedMeeting(room, { topic, start, duration, link }) {
+    await roomRequest("schedule the meeting", (client) => client.from(ROOM_MEETINGS_TABLE)
+      .insert({ room_id: room.remoteId, topic, starts_at: start, duration_minutes: duration, link }),
+    "The meeting couldn't be scheduled. Check your connection and try again.");
+  }
+
+  async function cancelSharedMeeting(meeting) {
+    await roomRequest("cancel the meeting", (client) => client.from(ROOM_MEETINGS_TABLE).delete({ count: "exact" }).eq("id", meeting.id),
+      "The meeting couldn't be canceled. Check your connection and try again.", { expectOne: true });
+  }
+
+  async function sendSharedProposal(room, companyId, { title, price, timeline, summary }) {
+    await roomRequest("send the proposal", (client) => client.from(ROOM_PROPOSALS_TABLE)
+      .insert({ room_id: room.remoteId, profile_id: companyId.slice(2), title, price, timeline, summary }),
+    "Your proposal couldn't be sent. Check your connection and try again.");
+  }
+
+  async function withdrawSharedProposal(proposal) {
+    await roomRequest("withdraw the proposal", (client) => client.from(ROOM_PROPOSALS_TABLE).delete({ count: "exact" }).eq("id", proposal.id),
+      "The proposal couldn't be withdrawn. Check your connection and try again.", { expectOne: true });
+  }
+
+  async function setSharedProposalStatus(proposal, status) {
+    await roomRequest("update the proposal", (client) => client.from(ROOM_PROPOSALS_TABLE)
+      .update({ status }, { count: "exact" }).eq("id", proposal.id),
+    "The proposal couldn't be updated. Check your connection and try again.",
+    { expectOne: true, gone: "This proposal was withdrawn by the company that sent it." });
+  }
+
+  async function setSharedRoomNeeds(room, needs) {
+    await roomRequest("change the project's needs", (client) => client.from(ROOMS_TABLE)
+      .update({ needs }, { count: "exact" }).eq("id", room.remoteId),
+    "The project's needs couldn't be saved. Check your connection and try again.", { expectOne: true });
+  }
+
+  async function closeSharedRoom(room) {
+    await roomRequest("close the room", (client) => client.from(ROOMS_TABLE).delete({ count: "exact" }).eq("id", room.remoteId),
+      "The room couldn't be closed. Check your connection and try again.", { expectOne: true, gone: "This room was already closed." });
+  }
+
   function memberEventFromRow(row) {
     if (!row || typeof row !== "object" || typeof row.id !== "string" || typeof row.profile_id !== "string") return null;
     const title = cleanText(row.title, 100);
@@ -6966,6 +8080,8 @@
     renderExpoFloor();
     renderFullCompanyProfile();
     renderDashboard();
+    renderRoomList();
+    refreshSharedRoomPage();
     refreshOpportunityLists();
     refreshEvents();
     document.querySelectorAll("[data-follow-company]").forEach(paintFollowButton);
@@ -7008,9 +8124,12 @@
         account.user = next;
         if (!changed) return;
         clearConversationState();
+        clearRoomState();
+        refreshSharedRoomPage();
         window.setTimeout(async () => {
           const [ownLoaded] = await Promise.all([
             loadOwnProfileIds(), loadMemberResponses(), loadMemberFollows(), loadMemberSaves(), loadMemberRsvps(), loadMemberConversations(),
+            loadMemberRooms(),
           ]);
           if (!ownLoaded) account.ownIds = new Set();
           account.viewsSent.clear();
@@ -7021,12 +8140,14 @@
       });
       await Promise.all([
         loadMemberProfiles(), loadMemberOpportunities(), loadMemberResponses(), loadMemberUpdates(), loadMemberFollows(),
-        loadMemberSaves(), loadMemberEvents(), loadMemberRsvps(), loadMemberConversations(),
+        loadMemberSaves(), loadMemberEvents(), loadMemberRsvps(), loadMemberConversations(), loadMemberRooms(),
       ]);
       await loadProfileViewCounts();
       conversationsCheckedAt = Date.now();
       document.addEventListener("visibilitychange", () => {
-        if (!document.hidden && account.user && Date.now() - conversationsCheckedAt > 30000) refreshOpenConversations();
+        if (document.hidden || !account.user || Date.now() - conversationsCheckedAt <= 30000) return;
+        refreshOpenConversations();
+        if (document.getElementById("member-dashboard")) loadMemberRooms().then((loaded) => { if (loaded) refreshConversationViews(); });
       });
     } catch {
       account.error = "Sign-in isn't available right now. Refresh the page to try again.";
@@ -7053,9 +8174,14 @@
       nav.insertBefore(button, nav.querySelector("[data-open-join]"));
     }
     const unread = account.user ? account.conversations.filter(conversationUnread).length : 0;
-    button.textContent = !account.user ? "Sign in" : unread ? `Account · ${unread} new` : "Account";
-    button.setAttribute("aria-label", account.user
-      ? `Account, signed in as ${account.user.email}${unread ? `, ${unread} ${unread === 1 ? "conversation" : "conversations"} with new messages` : ""}` : "Sign in");
+    const invitations = sharedRoomInvitations().length;
+    const news = unread + invitations;
+    button.textContent = !account.user ? "Sign in" : news ? `Account · ${news} new` : "Account";
+    const details = [
+      unread ? `${unread} ${unread === 1 ? "conversation" : "conversations"} with new messages` : "",
+      invitations ? `${invitations} room ${invitations === 1 ? "invitation" : "invitations"}` : "",
+    ].filter(Boolean);
+    button.setAttribute("aria-label", account.user ? `Account, signed in as ${account.user.email}${details.length ? `, ${details.join(", ")}` : ""}` : "Sign in");
   }
 
   function signInErrorMessage(error) {
@@ -7323,6 +8449,8 @@
     writeStoredValue(SAVED_KEY, [...localSaves]);
     rebuildSaves();
     clearConversationState();
+    clearRoomState();
+    writeStoredValue(ROOMS_SEEN_KEY, {});
     await Promise.all(removed.map((profile) => mediaRequest("readwrite", (store) => store.delete(profile.id)).catch(() => {})));
     await account.client.auth.signOut({ scope: "local" }).catch(() => {});
     account.user = null;

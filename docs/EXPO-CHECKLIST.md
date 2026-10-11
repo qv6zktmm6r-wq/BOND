@@ -117,7 +117,7 @@ Companies host their own demos, workshops, open houses, and Q&As. Free reach onl
 
 ## Flagship: AI Opportunity Rooms
 
-Working in the preview: rooms are saved in the visitor's browser, the project reader matches keywords (no paid AI yet), and nothing is sent to companies.
+Working: rooms opened as a published company are shared through the database with the published companies they invite; rooms opened as yourself, as a draft, or with only sample companies stay in the visitor's browser as demos. The project reader matches keywords (no paid AI yet).
 
 - [x] Describe a project in plain language ("I need to build a fleet management platform…"), typed or spoken, with three examples on the homepage
 - [x] Find companies matching the requirements: BOND reads which kinds of help the project needs (software, logistics, construction, engineering, manufacturing, energy, aerospace, program management), and the visitor can change them
@@ -126,7 +126,7 @@ Working in the preview: rooms are saved in the visitor's browser, the project re
 - [x] Open a private Opportunity Room (`room.html`): project and need coverage, conversation, team, proposals (shortlist, decline), meetings (https meeting link, add to calendar), and close the room; rooms are listed on the homepage and the dashboard
 - [x] Invite a company into a room straight from its Spotlight or profile ("Invite to a room" on the profile dialog, full profile, and expo side panel)
 - [ ] Real AI project reading and partner reasoning (needs the AI provider below)
-- [ ] Room invitations reaching the companies, and rooms shared between members (direct messages to published companies are done; rooms still need the database)
+- [x] Room invitations reaching the companies, and rooms shared between members: invited companies accept or decline from their dashboard or the room page; joined companies share the conversation and meetings and send sealed proposals only the host can read; the host manages needs, the team, meetings, and proposals and closes the room. Email notifications for invitations are not sent yet
 - [~] Video meetings: the room stores a meeting link the host pastes (Zoom, Teams, Meet); built-in video needs the video provider
 
 ## Guiding principles
@@ -142,7 +142,7 @@ Working in the preview: rooms are saved in the visitor's browser, the project re
 - [x] Delete-my-account option (Account dialog, confirmed by typing your email) that also removes the account's company profiles and their logo and cover files from storage
 - [x] Profile owners are private: visitors can't tell which company profiles share one account; only the signed-in owner sees which profiles are theirs
 - [ ] Representative sign-in and roles (several people managing one company)
-- [~] Database for profiles, Opportunity Board posts and responses, company updates, follows, saved companies, events, RSVPs, profile view counts, and messages and meeting requests to published companies (done); introduction requests and Opportunity Rooms are still in the browser
+- [~] Database for profiles, Opportunity Board posts and responses, company updates, follows, saved companies, events, RSVPs, profile view counts, messages and meeting requests to published companies, and Opportunity Rooms between published companies (done); introduction requests and demo rooms are still in the browser
 - [ ] Business claiming and verification; certification verification (VOSB/SDVOSB and others)
 - [ ] Video hosting and live streaming (cost to scope)
 - [ ] AI provider for matchmaking and Opportunity Rooms (cost to scope)
