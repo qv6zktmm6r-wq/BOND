@@ -94,7 +94,7 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 
 Dashboard page (`dashboard.html`, "Dashboard" in the main menu), with a summary row of counts:
 
-- [x] Connections and saved companies (saved, following, and introduction requests, with a Message button)
+- [x] Connections and saved companies (saved, following, and introduction requests, with a Message button); saves of published companies made while signed in are kept in the account (private to the member)
 - [x] Messages (every demo conversation with its last message; reopen it)
 - [x] Company profile views: published companies show how many signed-in members viewed them in the last 30 and 7 days, through yesterday (once per member per day, never who), plus companies you viewed recently
 - [x] Opportunities (posted, with response counts, and the ones you responded to)
@@ -142,7 +142,7 @@ Working in the preview: rooms are saved in the visitor's browser, the project re
 - [x] Delete-my-account option (Account dialog, confirmed by typing your email) that also removes the account's company profiles and their logo and cover files from storage
 - [x] Profile owners are private: visitors can't tell which company profiles share one account; only the signed-in owner sees which profiles are theirs
 - [ ] Representative sign-in and roles (several people managing one company)
-- [~] Database for profiles, Opportunity Board posts and responses, company updates, follows, events, RSVPs, and profile view counts (done); messages and meetings are still in the browser
+- [~] Database for profiles, Opportunity Board posts and responses, company updates, follows, saved companies, events, RSVPs, and profile view counts (done); messages and meetings are still in the browser
 - [ ] Business claiming and verification; certification verification (VOSB/SDVOSB and others)
 - [ ] Video hosting and live streaming (cost to scope)
 - [ ] AI provider for matchmaking and Opportunity Rooms (cost to scope)

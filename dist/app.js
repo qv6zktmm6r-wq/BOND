@@ -32,6 +32,7 @@
   const UPDATES_TABLE = "company_updates";
   const UPDATE_COLUMNS = "id,profile_id,type,text,created_at";
   const FOLLOWS_TABLE = "company_follows";
+  const SAVES_TABLE = "company_saves";
   const HIDDEN_TEXT_CHARACTERS = /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2069\u3164\uFEFF\uFFA0\uFFF9-\uFFFB\u{1D173}-\u{1D17A}\u{E0000}-\u{E007F}]/gu;
   const LINE_SEPARATORS = /\r\n|[\r\u0085\u2028\u2029]/g;
   const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
@@ -362,7 +363,10 @@
   };
 
   const profiles = [...sampleProfiles, ...readSavedProfiles()];
-  const savedCompanies = new Set(readStoredIds(SAVED_KEY));
+  // Saves of sample companies and anything saved while signed out stay in this browser;
+  // saves of member companies made while signed in live in the account (account.saves).
+  const localSaves = new Set(readStoredIds(SAVED_KEY));
+  const savedCompanies = new Set(localSaves);
   const introRequests = new Set(readStoredIds(INTROS_KEY));
   const messagesByCompany = readSavedMessages();
   const questionsByCompany = readSavedMessages(QUESTIONS_KEY);
@@ -376,6 +380,8 @@
   // follows of member companies made while signed in live in the account (account.follows).
   const localFollows = new Set(readStoredIds(FOLLOWS_KEY));
   const followedCompanies = new Set(localFollows);
+  // Saves and follows with a request still in flight; further clicks on them are ignored until it settles.
+  const pendingToggles = new Set();
   const memberUpdates = [];
   const memberEvents = [];
   const hostedEvents = readHostedEvents();
@@ -1481,16 +1487,7 @@
         conversation.querySelector("textarea")?.focus();
       }
     });
-    save.addEventListener("click", () => {
-      const wasSaved = savedCompanies.has(profile.id);
-      if (wasSaved) savedCompanies.delete(profile.id);
-      else savedCompanies.add(profile.id);
-      const persisted = writeStoredValue(SAVED_KEY, [...savedCompanies]);
-      refreshSaveButtons();
-      status.textContent = wasSaved
-        ? `${profile.name} removed from your saved demo companies.`
-        : `${profile.name} saved ${persisted ? "in this browser" : "for this visit; browser storage is unavailable"}.`;
-    });
+    save.addEventListener("click", () => toggleSave(profile, status));
     meeting.addEventListener("click", () => {
       meetingRequests[profile.id] = new Date().toISOString();
       const persisted = writeStoredValue(MEETINGS_KEY, meetingRequests);
@@ -1524,6 +1521,45 @@
     container.append(actions, status, conversation);
   }
 
+  async function toggleSave(profile, status) {
+    const pendingKey = `save:${profile.id}`;
+    if (pendingToggles.has(pendingKey)) return;
+    const saving = !savedCompanies.has(profile.id);
+    const inAccount = Boolean(profile.member && account.user && (saving || account.saves.has(profile.id)));
+    const wasLocal = localSaves.has(profile.id);
+    let persisted = true;
+    if (inAccount) {
+      if (saving) account.saves.add(profile.id);
+      else account.saves.delete(profile.id);
+    } else if (saving) localSaves.add(profile.id);
+    if (!saving) localSaves.delete(profile.id);
+    if (!inAccount || !saving) persisted = writeStoredValue(SAVED_KEY, [...localSaves]);
+    rebuildSaves();
+    refreshSaveButtons();
+    if (inAccount) {
+      pendingToggles.add(pendingKey);
+      try {
+        await saveMemberSave(profile, saving);
+      } catch (error) {
+        if (saving) account.saves.delete(profile.id);
+        else account.saves.add(profile.id);
+        if (wasLocal && !saving) {
+          localSaves.add(profile.id);
+          writeStoredValue(SAVED_KEY, [...localSaves]);
+        }
+        rebuildSaves();
+        refreshSaveButtons();
+        status.textContent = error.message;
+        return;
+      } finally {
+        pendingToggles.delete(pendingKey);
+      }
+    }
+    status.textContent = !saving ? `${profile.name} removed from your saved companies.`
+      : inAccount ? `${profile.name} saved to your account.`
+        : `${profile.name} saved ${persisted ? "in this browser" : "for this visit; browser storage is unavailable"}.`;
+  }
+
   function followButton(profile, className) {
     const button = element("button", `${className} company-follow`);
     button.type = "button";
@@ -1549,8 +1585,11 @@
   }
 
   async function toggleFollow(profile) {
+    const pendingKey = `follow:${profile.id}`;
+    if (pendingToggles.has(pendingKey)) return;
     const following = !followedCompanies.has(profile.id);
     const inAccount = Boolean(profile.member && account.user && (following || account.follows.has(profile.id)));
+    const wasLocal = localFollows.has(profile.id);
     let persisted = true;
     if (inAccount) {
       if (following) account.follows.add(profile.id);
@@ -1561,15 +1600,22 @@
     rebuildFollows();
     paintFollows();
     if (inAccount) {
+      pendingToggles.add(pendingKey);
       try {
         await saveMemberFollow(profile, following);
       } catch (error) {
         if (following) account.follows.delete(profile.id);
         else account.follows.add(profile.id);
+        if (wasLocal && !following) {
+          localFollows.add(profile.id);
+          writeStoredValue(FOLLOWS_KEY, [...localFollows]);
+        }
         rebuildFollows();
         paintFollows();
         announce(error.message);
         return;
+      } finally {
+        pendingToggles.delete(pendingKey);
       }
     }
     announce(following
@@ -5676,7 +5722,7 @@
   }
 
   const account = {
-    client: null, user: null, ownIds: new Set(), follows: new Set(), rsvpRows: [], eventLinks: Object.create(null),
+    client: null, user: null, ownIds: new Set(), follows: new Set(), saves: new Set(), rsvpRows: [], eventLinks: Object.create(null),
     viewCounts: Object.create(null), viewCountsError: false, viewsSent: new Set(), loaded: false, error: "",
   };
 
@@ -6018,17 +6064,55 @@
   }
 
   async function loadMemberFollows() {
-    account.follows = new Set();
-    if (account.user) {
+    const follows = new Set();
+    const userId = account.user?.id;
+    account.follows = follows;
+    if (userId) {
       const { data, error } = await account.client.from(FOLLOWS_TABLE).select("profile_id").limit(500);
+      if (account.follows !== follows || account.user?.id !== userId) return false;
       if (error) {
         rebuildFollows();
         return false;
       }
-      for (const row of Array.isArray(data) ? data : []) if (typeof row.profile_id === "string") account.follows.add(`m-${row.profile_id}`);
+      for (const row of Array.isArray(data) ? data : []) if (typeof row.profile_id === "string") follows.add(`m-${row.profile_id}`);
     }
     rebuildFollows();
     return true;
+  }
+
+  function rebuildSaves() {
+    savedCompanies.clear();
+    for (const id of localSaves) savedCompanies.add(id);
+    for (const id of account.saves) savedCompanies.add(id);
+  }
+
+  async function loadMemberSaves() {
+    const saves = new Set();
+    const userId = account.user?.id;
+    account.saves = saves;
+    if (userId) {
+      const { data, error } = await account.client.from(SAVES_TABLE).select("profile_id").limit(500);
+      if (account.saves !== saves || account.user?.id !== userId) return false;
+      if (error) {
+        rebuildSaves();
+        return false;
+      }
+      for (const row of Array.isArray(data) ? data : []) if (typeof row.profile_id === "string") saves.add(`m-${row.profile_id}`);
+    }
+    rebuildSaves();
+    return true;
+  }
+
+  async function saveMemberSave(profile, saving) {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then save the company.");
+    const table = account.client.from(SAVES_TABLE);
+    const { error } = saving
+      ? await table.insert({ profile_id: profile.remoteId })
+      : await table.delete().eq("profile_id", profile.remoteId);
+    if (!error) return;
+    if (/^You can save up to .* a day\.$/.test(error.message || "")) throw new Error(`${error.message} Try again tomorrow.`);
+    if (/^You can save up to/.test(error.message || "")) throw new Error(`${error.message} Remove one to save ${profile.name}.`);
+    throw new Error(`${saving ? "Saving" : "Removing"} ${profile.name} didn't go through. Check your connection and try again.`);
   }
 
   async function saveMemberFollow(profile, following) {
@@ -6274,6 +6358,7 @@
     refreshOpportunityLists();
     refreshEvents();
     document.querySelectorAll("[data-follow-company]").forEach(paintFollowButton);
+    refreshSaveButtons();
   }
 
   function cleanAuthParams() {
@@ -6312,7 +6397,7 @@
         account.user = next;
         if (!changed) return;
         window.setTimeout(async () => {
-          const [ownLoaded] = await Promise.all([loadOwnProfileIds(), loadMemberResponses(), loadMemberFollows(), loadMemberRsvps()]);
+          const [ownLoaded] = await Promise.all([loadOwnProfileIds(), loadMemberResponses(), loadMemberFollows(), loadMemberSaves(), loadMemberRsvps()]);
           if (!ownLoaded) account.ownIds = new Set();
           account.viewsSent.clear();
           await loadProfileViewCounts();
@@ -6322,7 +6407,7 @@
       });
       await Promise.all([
         loadMemberProfiles(), loadMemberOpportunities(), loadMemberResponses(), loadMemberUpdates(), loadMemberFollows(),
-        loadMemberEvents(), loadMemberRsvps(),
+        loadMemberSaves(), loadMemberEvents(), loadMemberRsvps(),
       ]);
       await loadProfileViewCounts();
     } catch {
@@ -6613,6 +6698,10 @@
     for (const id of [...localFollows]) if (id.startsWith("m-")) localFollows.delete(id);
     writeStoredValue(FOLLOWS_KEY, [...localFollows]);
     rebuildFollows();
+    account.saves = new Set();
+    for (const id of [...localSaves]) if (id.startsWith("m-")) localSaves.delete(id);
+    writeStoredValue(SAVED_KEY, [...localSaves]);
+    rebuildSaves();
     await Promise.all(removed.map((profile) => mediaRequest("readwrite", (store) => store.delete(profile.id)).catch(() => {})));
     await account.client.auth.signOut({ scope: "local" }).catch(() => {});
     account.user = null;
