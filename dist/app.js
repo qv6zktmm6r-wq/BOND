@@ -33,6 +33,14 @@
   const UPDATE_COLUMNS = "id,profile_id,type,text,created_at";
   const FOLLOWS_TABLE = "company_follows";
   const SAVES_TABLE = "company_saves";
+  const CONVERSATIONS_TABLE = "company_conversations";
+  const CONVERSATION_COLUMNS = "id,profile_id,sender_profile_id,created_at,last_message_at";
+  const MESSAGES_TABLE = "company_messages";
+  const MESSAGE_COLUMNS = "id,conversation_id,from_company,kind,body,times,meeting_status,created_at";
+  const READS_TABLE = "company_conversation_reads";
+  const MAX_MESSAGE_LENGTH = 2000;
+  const MAX_MEETING_TIMES_LENGTH = 200;
+  const MEETING_STATUS_LABELS = { pending: "Waiting for an answer", accepted: "Accepted", declined: "Declined", cancelled: "Cancelled" };
   const HIDDEN_TEXT_CHARACTERS = /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2069\u3164\uFEFF\uFFA0\uFFF9-\uFFFB\u{1D173}-\u{1D17A}\u{E0000}-\u{E007F}]/gu;
   const LINE_SEPARATORS = /\r\n|[\r\u0085\u2028\u2029]/g;
   const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
@@ -1489,6 +1497,11 @@
     });
     save.addEventListener("click", () => toggleSave(profile, status));
     meeting.addEventListener("click", () => {
+      if (profile.member && ACCOUNTS_ENABLED) {
+        const host = meeting.closest("dialog");
+        openMeetingRequest(profile, host ? dialogOpeners.get(host) : meeting);
+        return;
+      }
       meetingRequests[profile.id] = new Date().toISOString();
       const persisted = writeStoredValue(MEETINGS_KEY, meetingRequests);
       status.textContent = persisted
@@ -1643,6 +1656,10 @@
   }
 
   function renderChat(profile, container) {
+    if (profile.member && ACCOUNTS_ENABLED) {
+      renderMemberChat(profile, container);
+      return;
+    }
     container.replaceChildren();
     container.classList.add("expo-chat");
     container.append(element("h4", "detail-label", "1:1 conversation preview"));
@@ -1693,6 +1710,403 @@
     actions.append(send, dictationButton(textarea, status));
     form.append(label, textarea, actions, status);
     container.append(thread, form);
+  }
+
+  const conversationThreads = new WeakMap();
+  let conversationPoll = 0;
+  let conversationsCheckedAt = 0;
+
+  function conversationNames(conversation) {
+    const company = resolveProfile(conversation.profileId) || null;
+    const sender = conversation.senderId ? resolveProfile(conversation.senderId) || null : null;
+    return {
+      company, sender,
+      companyName: company?.name || "A BOND company",
+      senderName: conversation.senderId ? sender?.name || "A BOND company" : "A BOND member",
+    };
+  }
+
+  function conversationSignature() {
+    return account.conversations.map((item) => `${item.id}:${item.lastAt}:${item.readAt}`).join("|");
+  }
+
+  function refreshConversationViews() {
+    renderAccountButton();
+    if (!document.getElementById("company-dialog")?.open) renderDashboard();
+  }
+
+  function visibleConversationThreads() {
+    return [...document.querySelectorAll("[data-conversation-thread]")].filter((thread) => thread.getClientRects().length > 0);
+  }
+
+  async function refreshOpenConversations({ force = false } = {}) {
+    if (!account.user) return;
+    const before = conversationSignature();
+    await loadMemberConversations();
+    conversationsCheckedAt = Date.now();
+    await Promise.all(visibleConversationThreads().map((thread) => conversationThreads.get(thread)?.({ reload: true, force })));
+    if (conversationSignature() !== before) refreshConversationViews();
+  }
+
+  function startConversationPolling() {
+    if (conversationPoll) return;
+    conversationPoll = window.setInterval(() => {
+      if (!account.user || !document.querySelector("[data-conversation-thread]")) {
+        window.clearInterval(conversationPoll);
+        conversationPoll = 0;
+        return;
+      }
+      if (!document.hidden && visibleConversationThreads().length) refreshOpenConversations();
+    }, 20000);
+  }
+
+  function drawConversationThread(thread, conversation, emptyText) {
+    thread.replaceChildren();
+    const messages = conversation ? account.threads[conversation.id] || [] : [];
+    if (!messages.length) {
+      thread.append(element("p", "chat-empty", emptyText));
+      return;
+    }
+    const side = conversationSide(conversation);
+    const { sender, companyName, senderName } = conversationNames(conversation);
+    for (const message of messages) {
+      const mine = side === "company" ? message.fromCompany : !message.fromCompany;
+      const author = mine
+        ? side === "company" ? `You · ${companyName}` : sender ? `You · as ${sender.name}` : "You"
+        : message.fromCompany ? companyName : senderName;
+      const meeting = message.kind === "meeting";
+      const entry = element("article", `chat-message${mine ? "" : " is-theirs"}${meeting ? " chat-meeting" : ""}`);
+      entry.append(element("p", "chat-message-author", meeting ? `${author} · Meeting request` : author));
+      if (meeting) {
+        entry.append(element("p", "chat-message-text", `Preferred times: ${message.times}`));
+        if (message.body) entry.append(element("p", "chat-message-text", message.body));
+        entry.append(element("p", "chat-meeting-status", `Status: ${MEETING_STATUS_LABELS[message.status]}`));
+        if (message.status === "pending") {
+          const choices = side === "company"
+            ? [["Accept", "accepted", "button button-primary"], ["Decline", "declined", "button button-secondary"]]
+            : [["Cancel request", "cancelled", "button button-secondary"]];
+          const row = element("div", "chat-actions chat-meeting-actions");
+          const buttons = choices.map(([text, status, className]) => {
+            const button = element("button", className, text);
+            button.type = "button";
+            button.setAttribute("aria-label", `${text}: meeting request for ${message.times}`);
+            button.addEventListener("click", () => answerMeeting(message, status, buttons));
+            return button;
+          });
+          row.append(...buttons);
+          entry.append(row);
+        }
+      } else entry.append(element("p", "chat-message-text", message.body));
+      const time = element("time", "chat-message-time", new Date(message.at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }));
+      time.dateTime = message.at;
+      entry.append(time);
+      thread.append(entry);
+    }
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  async function answerMeeting(message, status, buttons) {
+    buttons.forEach((button) => { button.disabled = true; });
+    try {
+      await setMeetingStatus(message, status);
+      announce(status === "accepted" ? "Meeting request accepted. The member sees your answer in the conversation."
+        : status === "declined" ? "Meeting request declined." : "Meeting request cancelled.");
+    } catch (error) {
+      announce(error.message);
+    }
+    await refreshOpenConversations({ force: true });
+  }
+
+  function bindConversationThread(thread, currentConversation, emptyText) {
+    thread.classList.add("chat-thread");
+    thread.dataset.conversationThread = "";
+    thread.setAttribute("role", "log");
+    thread.setAttribute("aria-live", "polite");
+    thread.setAttribute("aria-relevant", "additions");
+    let drawnKey = null;
+    const sync = async ({ reload = false, force = false } = {}) => {
+      const conversation = currentConversation();
+      const key = (item) => (item ? `${item.id}:${item.lastAt}:${account.threads[item.id]?.length ?? "-"}` : "");
+      if (conversation && (!account.threads[conversation.id] || force || (reload && key(conversation) !== drawnKey))) {
+        if (!account.threads[conversation.id]) thread.replaceChildren(element("p", "chat-empty", "Loading messages…"));
+        const loaded = await loadConversationThread(conversation);
+        if (currentConversation()?.id !== conversation.id) return;
+        if (!loaded && !account.threads[conversation.id]) {
+          drawnKey = null;
+          thread.replaceChildren(element("p", "chat-empty", "Messages couldn't load. Check your connection and try again."));
+          return;
+        }
+      }
+      const latest = currentConversation();
+      if ((latest?.id || "") !== (conversation?.id || "")) return;
+      if (force || key(latest) !== drawnKey) {
+        drawnKey = key(latest);
+        drawConversationThread(thread, latest, emptyText);
+      }
+      if (latest && thread.getClientRects().length && !document.hidden && await markConversationRead(latest)) refreshConversationViews();
+    };
+    conversationThreads.set(thread, sync);
+    startConversationPolling();
+    window.setTimeout(() => sync(), 0);
+    return sync;
+  }
+
+  function messageSenderPicker(id) {
+    const own = profiles.filter((profile) => profile.member && profile.mine);
+    if (!own.length) return null;
+    const wrap = element("div", "chat-sender");
+    const label = element("label", "chat-label", "Write as");
+    label.htmlFor = id;
+    const select = element("select", "chat-sender-select");
+    select.id = id;
+    own.forEach((profile) => select.append(new Option(profile.name, profile.id)));
+    select.append(new Option("Myself (the company sees \"A BOND member\")", ""));
+    wrap.append(label, select);
+    return { wrap, select };
+  }
+
+  function conversationComposer({ labelText, placeholder, sendLabel, target, onSent }) {
+    const form = element("form", "chat-form");
+    const id = `conversation-message-${++chatSequence}`;
+    const label = element("label", "chat-label", labelText);
+    label.htmlFor = id;
+    const textarea = element("textarea", "chat-input");
+    textarea.id = id;
+    textarea.name = "message";
+    textarea.rows = 3;
+    textarea.maxLength = MAX_MESSAGE_LENGTH;
+    textarea.required = true;
+    textarea.placeholder = placeholder;
+    const send = element("button", "button button-primary", sendLabel);
+    send.type = "submit";
+    const status = element("p", "chat-status");
+    status.setAttribute("role", "status");
+    textarea.addEventListener("input", () => textarea.setCustomValidity(""));
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (send.disabled) return;
+      const text = plainText(textarea.value, true);
+      const problem = !text ? "Write a message before sending." : text.length > MAX_MESSAGE_LENGTH ? "Keep your message to 2,000 characters or fewer." : "";
+      if (problem) {
+        textarea.setCustomValidity(problem);
+        textarea.reportValidity();
+        return;
+      }
+      send.disabled = true;
+      status.textContent = "Sending…";
+      try {
+        const conversation = await sendConversationMessage(await target(), { body: text });
+        textarea.value = "";
+        status.textContent = "Sent.";
+        onSent(conversation);
+      } catch (error) {
+        status.textContent = error.message;
+      } finally {
+        send.disabled = false;
+      }
+    });
+    const actions = element("div", "chat-actions");
+    actions.append(send, dictationButton(textarea, status));
+    form.append(label, textarea, actions, status);
+    return { form, textarea, status };
+  }
+
+  function signInToMessage(container, text) {
+    container.append(element("p", "chat-disclaimer", account.error || text));
+    if (account.error) return;
+    const button = element("button", "button button-primary", "Sign in");
+    button.type = "button";
+    button.addEventListener("click", () => {
+      const host = button.closest("dialog");
+      host?.close();
+      openAccount(host ? dialogOpeners.get(host) : button);
+    });
+    container.append(button);
+  }
+
+  function renderMemberChat(profile, container) {
+    container.replaceChildren();
+    container.classList.add("expo-chat");
+    container.append(element("h4", "detail-label", `Message ${profile.name}`));
+    if (isOwn(profile)) {
+      container.append(element("p", "chat-disclaimer", "This is your company. Messages and meeting requests members send it appear under Messages on your dashboard."),
+        dashboardLink("Open your messages", "dashboard.html#messages", "button button-secondary"));
+      return;
+    }
+    if (!account.user) {
+      signInToMessage(container, `Sign in to message ${profile.name}. Your message goes privately to the company. It sees your company's name, or "A BOND member", never your email.`);
+      return;
+    }
+    container.append(element("p", "chat-disclaimer", "Private: only you and the company can read this conversation. The company sees the name you write as, never your email."));
+    const picker = messageSenderPicker(`message-sender-${profile.id}-${++chatSequence}`);
+    const senderId = () => (picker ? picker.select.value : "");
+    const thread = element("div");
+    thread.setAttribute("aria-label", `Conversation with ${profile.name}`);
+    const sync = bindConversationThread(thread, () => conversationFor(profile, senderId()), `Your conversation with ${profile.name} starts here.`);
+    picker?.select.addEventListener("change", () => sync());
+    const composer = conversationComposer({
+      labelText: "Your message",
+      placeholder: "Introduce your company or ask a question…",
+      sendLabel: "Send message",
+      target: () => ensureConversation(profile, senderId() ? resolveProfile(senderId()) : null),
+      onSent: () => {
+        sync();
+        refreshConversationViews();
+      },
+    });
+    if (picker) container.append(picker.wrap);
+    container.append(thread, composer.form);
+  }
+
+  function openMemberConversation(conversationId, opener) {
+    const current = () => account.conversations.find((item) => item.id === conversationId) || null;
+    const conversation = current();
+    if (!conversation) {
+      announce("This conversation is no longer available.");
+      return;
+    }
+    const side = conversationSide(conversation);
+    const { company, sender, companyName, senderName } = conversationNames(conversation);
+    const other = side === "company" ? senderName : companyName;
+    const view = prepareDialog(side === "company" ? `Messages to ${companyName}` : "Private conversation", `Conversation with ${other}`);
+    if (!view) return;
+    const { dialog, body } = view;
+    body.append(element("p", "dialog-copy", side === "company"
+      ? `Only you and ${conversation.senderId ? senderName : "this member"} can read this conversation. Your replies show as ${companyName}, never your email.`
+      : `You're writing ${sender ? `as ${sender.name}` : "as yourself, so the company sees \"A BOND member\""}. Only you and ${companyName} can read this conversation.`));
+    const chat = element("div", "expo-chat");
+    const thread = element("div");
+    thread.setAttribute("aria-label", `Conversation with ${other}`);
+    const sync = bindConversationThread(thread, current, "This conversation was deleted.");
+    const composer = conversationComposer({
+      labelText: "Your reply",
+      placeholder: "Write a reply…",
+      sendLabel: "Send reply",
+      target: async () => current() || Promise.reject(new Error("This conversation no longer exists.")),
+      onSent: () => sync(),
+    });
+    chat.append(thread, composer.form);
+    const actions = element("div", "chat-actions conversation-actions");
+    if (side === "member" && company) {
+      const meeting = element("button", "button button-secondary", "Request a meeting");
+      meeting.type = "button";
+      meeting.addEventListener("click", () => openMeetingRequest(company, dialogOpeners.get(dialog), conversation.senderId));
+      actions.append(meeting);
+    }
+    const removeText = side === "company" ? "Delete and block" : "Delete conversation";
+    const remove = element("button", "danger-link conversation-delete", removeText);
+    remove.type = "button";
+    let armed = false;
+    let timer = 0;
+    remove.addEventListener("click", async () => {
+      if (!armed) {
+        armed = true;
+        remove.textContent = side === "company" ? `Select again to delete and block ${other === "A BOND member" ? "this member" : other}` : "Select again to delete for both of you";
+        timer = window.setTimeout(() => {
+          armed = false;
+          remove.textContent = removeText;
+        }, 6000);
+        return;
+      }
+      window.clearTimeout(timer);
+      const target = current();
+      if (!target) return;
+      remove.disabled = true;
+      try {
+        await deleteConversation(target);
+      } catch (error) {
+        remove.disabled = false;
+        armed = false;
+        remove.textContent = removeText;
+        composer.status.textContent = error.message;
+        return;
+      }
+      dialog.close();
+      announce(side === "company" ? `Conversation deleted. ${other === "A BOND member" ? "This member" : other} can't start a new one with ${companyName}.` : "Conversation deleted.");
+    });
+    actions.append(remove);
+    body.append(chat, actions, element("p", "form-hint", side === "company"
+      ? `Delete and block removes the conversation for both sides and stops this sender from starting a new one with ${companyName}.`
+      : "Deleting removes the conversation for both of you."));
+    showDialog(dialog, opener);
+    composer.textarea.focus();
+  }
+
+  function openMeetingRequest(profile, opener, senderId = null) {
+    const view = prepareDialog("Request a meeting", `Meet with ${profile.name}`);
+    if (!view) return;
+    const { dialog, body } = view;
+    if (isOwn(profile)) {
+      body.append(element("p", "dialog-copy", "This is your company. Meeting requests members send it appear under Messages on your dashboard."),
+        dashboardLink("Open your messages", "dashboard.html#messages", "button button-secondary"));
+      showDialog(dialog, opener);
+      return;
+    }
+    if (!account.user) {
+      signInToMessage(body, `Sign in to request a meeting with ${profile.name}. The request goes privately to the company, which can accept or decline it.`);
+      showDialog(dialog, opener);
+      return;
+    }
+    body.append(element("p", "dialog-copy", `Suggest times that work for you. ${profile.name} can accept or decline, and you both see the answer in your conversation. Agree on the place or video link there.`));
+    const form = element("form", "chat-form");
+    const picker = messageSenderPicker("meeting-sender");
+    if (picker && senderId !== null && [...picker.select.options].some((option) => option.value === senderId)) picker.select.value = senderId;
+    const timesLabel = element("label", "chat-label", "Preferred times");
+    timesLabel.htmlFor = "meeting-times";
+    const times = element("input", "chat-input");
+    times.id = "meeting-times";
+    times.required = true;
+    times.maxLength = MAX_MEETING_TIMES_LENGTH;
+    times.placeholder = "e.g. Tue or Wed afternoon, 1–4 pm Eastern";
+    const noteLabel = element("label", "chat-label", "Note (optional)");
+    noteLabel.htmlFor = "meeting-note";
+    const note = element("textarea", "chat-input");
+    note.id = "meeting-note";
+    note.rows = 3;
+    note.maxLength = MAX_MESSAGE_LENGTH;
+    note.placeholder = "What would you like to discuss?";
+    const submit = element("button", "button button-primary", "Send meeting request");
+    submit.type = "submit";
+    const status = element("p", "chat-status");
+    status.setAttribute("role", "status");
+    times.addEventListener("input", () => times.setCustomValidity(""));
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (submit.disabled) return;
+      const when = plainText(times.value);
+      const text = plainText(note.value, true);
+      if (!when) {
+        times.setCustomValidity("Add one or more times that work for you.");
+        times.reportValidity();
+        return;
+      }
+      submit.disabled = true;
+      status.textContent = "Sending…";
+      const chosen = picker?.select.value || "";
+      try {
+        const conversation = await ensureConversation(profile, chosen ? resolveProfile(chosen) : null);
+        const sent = await sendConversationMessage(conversation, {
+          kind: "meeting", times: when.slice(0, MAX_MEETING_TIMES_LENGTH), body: text.slice(0, MAX_MESSAGE_LENGTH),
+        });
+        refreshConversationViews();
+        form.replaceChildren(element("p", "dialog-copy", `Meeting request sent to ${profile.name}. You'll see their answer in your conversation.`));
+        const open = element("button", "button button-primary", "Open the conversation");
+        open.type = "button";
+        open.addEventListener("click", () => openMemberConversation(sent.id, dialogOpeners.get(dialog)));
+        form.append(open);
+        open.focus();
+      } catch (error) {
+        status.textContent = error.message;
+        submit.disabled = false;
+      }
+    });
+    if (picker) form.append(picker.wrap);
+    const actions = element("div", "chat-actions");
+    actions.append(submit);
+    form.append(timesLabel, times, noteLabel, note, actions, status);
+    body.append(form);
+    showDialog(dialog, opener);
+    (picker?.select || times).focus();
   }
 
   function renderCompanyDetails(profile, container, options = {}) {
@@ -2087,7 +2501,7 @@
     tabs.setAttribute("role", "tablist");
     tabs.setAttribute("aria-label", `${profile.name} preview panels`);
     const profileTab = element("button", "expo-panel-tab", "Company profile");
-    const messageTab = element("button", "expo-panel-tab", "1:1 demo chat");
+    const messageTab = element("button", "expo-panel-tab", profile.member && ACCOUNTS_ENABLED ? "Messages" : "1:1 demo chat");
     const qaTab = element("button", "expo-panel-tab", "Live Q&A");
     const companyPanel = element("div", "panel-company");
     const messagePanel = element("div", "panel-message");
@@ -5285,10 +5699,15 @@
     return { row, actions };
   }
 
-  function dashboardItemRow(title, detail, action) {
+  function dashboardItemRow(title, detail, action, tags = []) {
     const row = element("li", "dashboard-row dashboard-row-plain");
     const main = element("div", "dashboard-row-main");
     main.append(element("strong", "dashboard-item-title", title), element("span", "feed-meta", detail));
+    if (tags.length) {
+      const list = element("span", "dashboard-tags");
+      tags.forEach((tag) => list.append(element("span", "dashboard-tag", tag)));
+      main.append(list);
+    }
     const actions = element("div", "dashboard-row-actions");
     if (action) actions.append(action);
     row.append(main, actions);
@@ -5305,6 +5724,9 @@
       .map((profile) => ({ profile, messages: messagesByCompany[profile.id] || [] }))
       .filter((entry) => entry.messages.length)
       .sort((a, b) => Date.parse(b.messages.at(-1).at) - Date.parse(a.messages.at(-1).at));
+    const memberConversations = account.user ? account.conversations : [];
+    const unreadConversations = memberConversations.filter(conversationUnread).length;
+    const conversationCount = conversations.length + memberConversations.length;
     const meetings = Object.entries(meetingRequests)
       .map(([id, at]) => ({ profile: resolveProfile(id), at }))
       .filter((entry) => entry.profile)
@@ -5327,7 +5749,8 @@
       [own.length, own.length === 1 ? "Your company" : "Your companies", "companies"],
       [savedCompanies.size, "Saved companies", "connections"],
       [followedCompanies.size, "Following", "connections"],
-      [conversations.length, conversations.length === 1 ? "Conversation" : "Conversations", "messages"],
+      [conversationCount, conversationCount === 1 ? "Conversation" : "Conversations", "messages"],
+      ...(unreadConversations ? [[unreadConversations, unreadConversations === 1 ? "New message" : "New messages", "messages"]] : []),
       [postedByYou.length, "Opportunities posted", "opportunities"],
       [responsesSent, responsesSent === 1 ? "Response sent" : "Responses sent", "opportunities"],
       [hostingUpcoming.length, "Events hosting", "hosting"],
@@ -5410,8 +5833,31 @@
       dashboardEmpty(connections, "Save or follow a company, or request an introduction, and it shows up here.", dashboardLink("Explore businesses", "index.html#businesses"));
     }
 
-    const messages = dashboardSection(container, "messages", "Messages", "Your demo conversations. They stay in this browser until BOND launches messaging.");
+    const messages = dashboardSection(container, "messages", "Messages", !ACCOUNTS_ENABLED
+      ? "Your demo conversations. They stay in this browser until BOND launches messaging."
+      : account.user ? "Private conversations and meeting requests with member companies. Only the two sides can read them."
+        : "Sign in to message member companies privately and to receive messages for your companies.");
+    if (account.user && account.conversationsError) messages.append(element("p", "form-hint", "Your messages couldn't load. Refresh the page to try again."));
+    if (memberConversations.length) {
+      const list = element("ul", "dashboard-list");
+      for (const conversation of memberConversations) {
+        const side = conversationSide(conversation);
+        const { company, sender, companyName, senderName } = conversationNames(conversation);
+        const detail = `${side === "company" ? `To ${companyName}` : sender ? `As ${sender.name}` : "As yourself"} · last activity ${shortDate(conversation.lastAt)}`;
+        const tags = conversationUnread(conversation) ? ["New"] : [];
+        const open = dashboardButton("Open conversation", "button button-secondary", `member-conversation-${conversation.id}`,
+          (button) => openMemberConversation(conversation.id, button), `Open conversation with ${side === "company" ? senderName : companyName}`);
+        const shown = side === "company" ? sender : company;
+        if (shown) {
+          const { row, actions } = dashboardCompanyRow(shown, detail, { tags });
+          actions.append(open);
+          list.append(row);
+        } else list.append(dashboardItemRow(side === "company" ? senderName : companyName, detail, open, tags));
+      }
+      messages.append(list);
+    }
     if (conversations.length) {
+      if (memberConversations.length) messages.append(element("h3", "detail-label", "Demo conversations with sample companies"));
       const list = element("ul", "dashboard-list");
       for (const { profile, messages: thread } of conversations) {
         const last = thread.at(-1);
@@ -5421,7 +5867,7 @@
         list.append(row);
       }
       messages.append(list);
-    } else {
+    } else if (!memberConversations.length) {
       dashboardEmpty(messages, "No conversations yet. Use Message company on any profile, or Start a conversation on a company update.", dashboardLink("Explore businesses", "index.html#businesses"));
     }
 
@@ -5724,6 +6170,7 @@
   const account = {
     client: null, user: null, ownIds: new Set(), follows: new Set(), saves: new Set(), rsvpRows: [], eventLinks: Object.create(null),
     viewCounts: Object.create(null), viewCountsError: false, viewsSent: new Set(), loaded: false, error: "",
+    conversations: [], conversationsError: false, threads: Object.create(null),
   };
 
   function loadScript(src) {
@@ -6127,6 +6574,170 @@
     throw new Error(`${following ? "Following" : "Unfollowing"} ${profile.name} didn't save. Check your connection and try again.`);
   }
 
+  function conversationFromRow(row, readAt = "") {
+    if (!row || typeof row.id !== "string" || typeof row.profile_id !== "string") return null;
+    const profileId = `m-${row.profile_id}`;
+    const senderId = typeof row.sender_profile_id === "string" ? `m-${row.sender_profile_id}` : "";
+    if (!MEMBER_ID_PATTERN.test(`m-${row.id}`) || !MEMBER_ID_PATTERN.test(profileId) || (senderId && !MEMBER_ID_PATTERN.test(senderId))) return null;
+    return { id: row.id, profileId, senderId, lastAt: storedTime(row.last_message_at), readAt: storedTime(readAt) };
+  }
+
+  function conversationSide(conversation) {
+    return account.ownIds.has(conversation.profileId.slice(2)) ? "company" : "member";
+  }
+
+  function conversationUnread(conversation) {
+    return Boolean(conversation.lastAt && (!conversation.readAt || Date.parse(conversation.lastAt) > Date.parse(conversation.readAt)));
+  }
+
+  function conversationFor(profile, senderId) {
+    return account.conversations.find((item) => item.profileId === profile.id && item.senderId === senderId && conversationSide(item) === "member") || null;
+  }
+
+  async function loadMemberConversations() {
+    const userId = account.user?.id;
+    const token = {};
+    account.conversationsToken = token;
+    if (!userId) {
+      account.conversations = [];
+      account.threads = Object.create(null);
+      account.conversationsError = false;
+      return true;
+    }
+    const [list, reads] = await Promise.all([
+      account.client.from(CONVERSATIONS_TABLE).select(CONVERSATION_COLUMNS).not("last_message_at", "is", null)
+        .order("last_message_at", { ascending: false }).limit(300),
+      account.client.from(READS_TABLE).select("conversation_id,read_at").limit(1000),
+    ]);
+    if (account.conversationsToken !== token || account.user?.id !== userId) return false;
+    if (list.error || reads.error) {
+      if (account.conversationsUser !== userId) {
+        account.conversations = [];
+        account.threads = Object.create(null);
+      }
+      account.conversationsError = true;
+      return false;
+    }
+    const readAt = new Map((reads.data || []).map((row) => [row.conversation_id, row.read_at]));
+    const previousUser = account.conversationsUser;
+    account.conversationsUser = userId;
+    account.conversations = (list.data || []).map((row) => conversationFromRow(row, readAt.get(row.id))).filter(Boolean);
+    if (previousUser !== userId) account.threads = Object.create(null);
+    account.conversationsError = false;
+    return true;
+  }
+
+  function messageFromRow(row) {
+    if (!row || typeof row.id !== "string" || (row.kind !== "message" && row.kind !== "meeting")) return null;
+    const at = storedTime(row.created_at);
+    const meeting = row.kind === "meeting";
+    const body = plainText(row.body, true).slice(0, MAX_MESSAGE_LENGTH);
+    const times = meeting ? plainText(row.times).slice(0, MAX_MEETING_TIMES_LENGTH) : "";
+    const status = meeting && MEETING_STATUS_LABELS[row.meeting_status] ? row.meeting_status : "";
+    if (!at || (meeting ? !times || !status : !body)) return null;
+    return { id: row.id, fromCompany: row.from_company === true, kind: row.kind, body, times, status, at };
+  }
+
+  function clearConversationState() {
+    account.conversationsToken = {};
+    account.conversationsUser = null;
+    account.conversations = [];
+    account.threads = Object.create(null);
+    for (const thread of document.querySelectorAll("[data-conversation-thread]")) {
+      const host = thread.closest("dialog");
+      if (host?.open) host.close();
+      thread.replaceChildren();
+      delete thread.dataset.conversationThread;
+    }
+  }
+
+  async function loadConversationThread(conversation) {
+    const userId = account.user?.id;
+    const { data, error } = await account.client.from(MESSAGES_TABLE).select(MESSAGE_COLUMNS).eq("conversation_id", conversation.id)
+      .order("created_at", { ascending: false }).order("id", { ascending: false }).limit(500);
+    if (error || !userId || account.user?.id !== userId) return false;
+    account.threads[conversation.id] = (data || []).map(messageFromRow).filter(Boolean).reverse();
+    return true;
+  }
+
+  function conversationErrorMessage(error, fallback) {
+    const text = String(error?.message || "");
+    if (/^You can (start|send) up to \d+ (conversations|messages) a day\.$/.test(text)) return `${text} Try again tomorrow.`;
+    if ([
+      "You can't message your own company.", "You can only write as one of your own companies.", "This company isn't accepting messages from you.",
+      "This conversation no longer exists.", "This conversation already has a meeting request waiting for an answer.",
+      "This meeting request was already answered.", "You can't change this meeting request.",
+    ].includes(text)) return text;
+    if (error?.code === "23514") return TEXT_REJECTED;
+    if (error?.code === "42501" || error?.status === 401) return "Your sign-in expired. Sign in again, then try again.";
+    return fallback;
+  }
+
+  function forgetConversation(conversation) {
+    account.conversations = account.conversations.filter((item) => item.id !== conversation.id);
+    delete account.threads[conversation.id];
+  }
+
+  async function ensureConversation(profile, sender) {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then send your message.");
+    const known = conversationFor(profile, sender ? sender.id : "");
+    if (known) return known;
+    const table = () => account.client.from(CONVERSATIONS_TABLE);
+    const failed = `Your message to ${profile.name} couldn't be sent. Check your connection and try again.`;
+    const { error } = await table().insert({ profile_id: profile.remoteId, sender_profile_id: sender ? sender.remoteId : null });
+    if (error) throw new Error(conversationErrorMessage(error, failed));
+    const query = table().select(CONVERSATION_COLUMNS).eq("profile_id", profile.remoteId);
+    const { data, error: readError } = await (sender ? query.eq("sender_profile_id", sender.remoteId) : query.is("sender_profile_id", null)).limit(1);
+    const conversation = !readError && Array.isArray(data) ? conversationFromRow(data[0]) : null;
+    if (!conversation) throw new Error(failed);
+    return conversation;
+  }
+
+  async function sendConversationMessage(conversation, { kind = "message", body = "", times = "" }) {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then send your message.");
+    const userId = account.user.id;
+    const { data, error } = await account.client.from(MESSAGES_TABLE)
+      .insert({ conversation_id: conversation.id, kind, body, times }).select(MESSAGE_COLUMNS).single();
+    if (account.user?.id !== userId) throw new Error("You signed out before the message finished sending. Sign in again to check it.");
+    if (error) {
+      if (error.code === "23503") forgetConversation(conversation);
+      throw new Error(conversationErrorMessage(error, "Your message couldn't be sent. Check your connection and try again."));
+    }
+    const message = messageFromRow(data);
+    if (message && account.threads[conversation.id]) account.threads[conversation.id].push(message);
+    else delete account.threads[conversation.id];
+    const at = message?.at || conversation.lastAt;
+    const current = account.conversations.find((item) => item.id === conversation.id) || conversation;
+    current.lastAt = at;
+    current.readAt = at;
+    account.conversations = [current, ...account.conversations.filter((item) => item.id !== conversation.id)];
+    return current;
+  }
+
+  async function markConversationRead(conversation) {
+    if (!account.client || !account.user || !conversationUnread(conversation)) return false;
+    const seen = conversation.lastAt;
+    const { error } = await account.client.from(READS_TABLE).insert({ conversation_id: conversation.id });
+    if (error) return false;
+    conversation.readAt = seen;
+    return true;
+  }
+
+  async function setMeetingStatus(message, status) {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then answer the meeting request.");
+    const { error, count } = await account.client.from(MESSAGES_TABLE).update({ meeting_status: status }, { count: "exact" }).eq("id", message.id);
+    if (error) throw new Error(conversationErrorMessage(error, "The meeting request couldn't be updated. Check your connection and try again."));
+    if (count !== 1) throw new Error("This meeting request was already answered or removed.");
+    message.status = status;
+  }
+
+  async function deleteConversation(conversation) {
+    if (!account.client || !account.user) throw new Error("Your sign-in expired. Sign in again, then delete the conversation.");
+    const { error } = await account.client.from(CONVERSATIONS_TABLE).delete().eq("id", conversation.id);
+    if (error) throw new Error("This conversation couldn't be deleted. Check your connection and try again.");
+    forgetConversation(conversation);
+  }
+
   function memberEventFromRow(row) {
     if (!row || typeof row !== "object" || typeof row.id !== "string" || typeof row.profile_id !== "string") return null;
     const title = cleanText(row.title, 100);
@@ -6396,8 +7007,11 @@
         const changed = (next?.id || "") !== (account.user?.id || "");
         account.user = next;
         if (!changed) return;
+        clearConversationState();
         window.setTimeout(async () => {
-          const [ownLoaded] = await Promise.all([loadOwnProfileIds(), loadMemberResponses(), loadMemberFollows(), loadMemberSaves(), loadMemberRsvps()]);
+          const [ownLoaded] = await Promise.all([
+            loadOwnProfileIds(), loadMemberResponses(), loadMemberFollows(), loadMemberSaves(), loadMemberRsvps(), loadMemberConversations(),
+          ]);
           if (!ownLoaded) account.ownIds = new Set();
           account.viewsSent.clear();
           await loadProfileViewCounts();
@@ -6407,9 +7021,13 @@
       });
       await Promise.all([
         loadMemberProfiles(), loadMemberOpportunities(), loadMemberResponses(), loadMemberUpdates(), loadMemberFollows(),
-        loadMemberSaves(), loadMemberEvents(), loadMemberRsvps(),
+        loadMemberSaves(), loadMemberEvents(), loadMemberRsvps(), loadMemberConversations(),
       ]);
       await loadProfileViewCounts();
+      conversationsCheckedAt = Date.now();
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden && account.user && Date.now() - conversationsCheckedAt > 30000) refreshOpenConversations();
+      });
     } catch {
       account.error = "Sign-in isn't available right now. Refresh the page to try again.";
     }
@@ -6434,8 +7052,10 @@
       });
       nav.insertBefore(button, nav.querySelector("[data-open-join]"));
     }
-    button.textContent = account.user ? "Account" : "Sign in";
-    button.setAttribute("aria-label", account.user ? `Account, signed in as ${account.user.email}` : "Sign in");
+    const unread = account.user ? account.conversations.filter(conversationUnread).length : 0;
+    button.textContent = !account.user ? "Sign in" : unread ? `Account · ${unread} new` : "Account";
+    button.setAttribute("aria-label", account.user
+      ? `Account, signed in as ${account.user.email}${unread ? `, ${unread} ${unread === 1 ? "conversation" : "conversations"} with new messages` : ""}` : "Sign in");
   }
 
   function signInErrorMessage(error) {
@@ -6702,6 +7322,7 @@
     for (const id of [...localSaves]) if (id.startsWith("m-")) localSaves.delete(id);
     writeStoredValue(SAVED_KEY, [...localSaves]);
     rebuildSaves();
+    clearConversationState();
     await Promise.all(removed.map((profile) => mediaRequest("readwrite", (store) => store.delete(profile.id)).catch(() => {})));
     await account.client.auth.signOut({ scope: "local" }).catch(() => {});
     account.user = null;

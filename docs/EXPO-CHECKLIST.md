@@ -2,7 +2,7 @@
 
 Built from the owner's online EXPO recommendations (October 9, 2026). We work through it top to bottom.
 
-Everything here is live on joinbond.world. Items marked done that work with published companies (profiles, the Opportunity Board, updates, follows, saves, events, and profile views) are saved in BOND's database for signed-in members; the rest uses sample companies or is saved in the visitor's own browser, as each item says. The "Platform" section at the bottom lists what a full launch still needs.
+Everything here is live on joinbond.world. Items marked done that work with published companies (profiles, the Opportunity Board, updates, follows, saves, events, profile views, and messages) are saved in BOND's database for signed-in members; the rest uses sample companies or is saved in the visitor's own browser, as each item says. The "Platform" section at the bottom lists what a full launch still needs.
 
 Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `[!]` waiting on the owner
 
@@ -31,8 +31,8 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 - [x] Representative availability on every booth
 - [x] Enter a booth
 - [~] Watch a video: there is a video slot, but no real video yet (needs video hosting)
-- [x] Start a conversation (demo chat, saved in the browser)
-- [x] Request a meeting (demo request, saved in the browser)
+- [x] Start a conversation: signed-in members message published companies privately (the company's owner sees it on their dashboard and replies); sample booths keep the demo chat, saved in the browser
+- [x] Request a meeting: signed-in members send published companies preferred times and a note, and the company accepts or declines; sample booths keep the demo request
 
 ## 2. AI Business Matchmaking
 
@@ -95,7 +95,7 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 Dashboard page (`dashboard.html`, "Dashboard" in the main menu), with a summary row of counts:
 
 - [x] Connections and saved companies (saved, following, and introduction requests, with a Message button); saves of published companies made while signed in are kept in the account (private to the member)
-- [x] Messages (every demo conversation with its last message; reopen it)
+- [x] Messages: private conversations with published companies, from both sides (messages you sent and messages to your companies), with "New" tags, replies, meeting requests to accept, decline, or cancel, and delete (the company can delete and block the sender); demo conversations with sample companies are listed too
 - [x] Company profile views: published companies show how many signed-in members viewed them in the last 30 and 7 days, through yesterday (once per member per day, never who), plus companies you viewed recently
 - [x] Opportunities (posted, with response counts, and the ones you responded to)
 - [x] Upcoming events (events you RSVP'd to, events from companies you follow, the next expo, and your meeting requests)
@@ -126,7 +126,7 @@ Working in the preview: rooms are saved in the visitor's browser, the project re
 - [x] Open a private Opportunity Room (`room.html`): project and need coverage, conversation, team, proposals (shortlist, decline), meetings (https meeting link, add to calendar), and close the room; rooms are listed on the homepage and the dashboard
 - [x] Invite a company into a room straight from its Spotlight or profile ("Invite to a room" on the profile dialog, full profile, and expo side panel)
 - [ ] Real AI project reading and partner reasoning (needs the AI provider below)
-- [ ] Invitations and messages reaching the companies, and rooms shared between members (needs accounts and a database)
+- [ ] Room invitations reaching the companies, and rooms shared between members (direct messages to published companies are done; rooms still need the database)
 - [~] Video meetings: the room stores a meeting link the host pastes (Zoom, Teams, Meet); built-in video needs the video provider
 
 ## Guiding principles
@@ -142,7 +142,7 @@ Working in the preview: rooms are saved in the visitor's browser, the project re
 - [x] Delete-my-account option (Account dialog, confirmed by typing your email) that also removes the account's company profiles and their logo and cover files from storage
 - [x] Profile owners are private: visitors can't tell which company profiles share one account; only the signed-in owner sees which profiles are theirs
 - [ ] Representative sign-in and roles (several people managing one company)
-- [~] Database for profiles, Opportunity Board posts and responses, company updates, follows, saved companies, events, RSVPs, and profile view counts (done); messages and meetings are still in the browser
+- [~] Database for profiles, Opportunity Board posts and responses, company updates, follows, saved companies, events, RSVPs, profile view counts, and messages and meeting requests to published companies (done); introduction requests and Opportunity Rooms are still in the browser
 - [ ] Business claiming and verification; certification verification (VOSB/SDVOSB and others)
 - [ ] Video hosting and live streaming (cost to scope)
 - [ ] AI provider for matchmaking and Opportunity Rooms (cost to scope)
