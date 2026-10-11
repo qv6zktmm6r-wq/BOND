@@ -39,6 +39,8 @@
   const EVENT_COLUMNS = "id,profile_id,title,format,starts_at,duration_minutes,location,description,capacity,going,created_at";
   const EVENT_LINKS_TABLE = "company_event_links";
   const RSVPS_TABLE = "company_event_rsvps";
+  const PROFILE_VIEWS_TABLE = "company_profile_views";
+  const PROFILE_VIEW_COUNTS = "company_profile_view_counts";
   const AUTH_STORAGE_KEY = "bond.auth";
   const FLASH_KEY = "bond.flash";
   const MAX_MEMBER_PROFILES = 5;
@@ -2008,6 +2010,7 @@
     recentlyViewed.unshift(profile.id);
     recentlyViewed.length = Math.min(recentlyViewed.length, 8);
     writeStoredValue(VIEWED_KEY, recentlyViewed);
+    if (profile.member) recordMemberView(profile);
   }
 
   function openCompany(profile, opener) {
@@ -5277,6 +5280,8 @@
       [responsesSent, responsesSent === 1 ? "Response sent" : "Responses sent", "opportunities"],
       [hostingUpcoming.length, "Events hosting", "hosting"],
       [attending.length, "Events attending", "events"],
+      ...(own.some((profile) => profile.member) && !account.viewCountsError
+        ? [[Object.values(account.viewCounts).reduce((total, counts) => total + counts.month, 0), "Profile views (30 days)", "companies"]] : []),
     ]) {
       const item = element("li");
       const link = dashboardLink("", `#${anchor}`, "dashboard-stat");
@@ -5305,7 +5310,11 @@
     if (own.length) {
       const list = element("ul", "dashboard-list");
       for (const profile of own) {
-        const status = ACCOUNTS_ENABLED ? (profile.member ? "Published" : "Draft in this browser") : profile.location;
+        let status = ACCOUNTS_ENABLED ? (profile.member ? "Published" : "Draft in this browser") : profile.location;
+        if (profile.member && !account.viewCountsError) {
+          const { week = 0, month = 0 } = account.viewCounts[profile.remoteId] || {};
+          status += ` · ${month} member ${month === 1 ? "view" : "views"} in 30 days (${week} in the last 7)`;
+        }
         const { row, actions } = dashboardCompanyRow(profile, `${profile.category} · ${status}`);
         actions.append(
           dashboardLink("Open profile", `company.html?id=${encodeURIComponent(profile.id)}`, "button button-secondary"),
@@ -5321,7 +5330,13 @@
       dashboardEmpty(companies, account.user ? "You haven't published a company yet." : "You haven't made a company profile in this browser yet.",
         dashboardButton("Create your company profile", "button button-primary", "create-profile", (button) => openJoin(button)));
     }
-    companies.append(element("p", "form-hint", "Profile views from other members will appear here once BOND launches accounts. This preview can't count visits from other people's browsers."));
+    const published = own.some((profile) => profile.member);
+    companies.append(element("p", "form-hint", !ACCOUNTS_ENABLED
+      ? "Profile views from other members will appear here once BOND launches accounts. This preview can't count visits from other people's browsers."
+      : account.viewCountsError ? "Profile views couldn't load. Refresh the page to try again."
+      : published ? "Member views count each signed-in member who opens your company's profile, once a day, through yesterday (UTC). BOND never shows who viewed, and visitors who aren't signed in aren't counted."
+      : account.user ? "Publish a company to see how many members view its profile."
+      : "Sign in and publish your company to see how many members view its profile."));
 
     const connections = dashboardSection(container, "connections", "Connections", "Companies you saved, follow, or asked to be introduced to.");
     const connectionIds = [...new Set([...savedCompanies, ...followedCompanies, ...introRequests])];
@@ -5655,7 +5670,8 @@
   }
 
   const account = {
-    client: null, user: null, ownIds: new Set(), follows: new Set(), rsvpRows: [], eventLinks: Object.create(null), loaded: false, error: "",
+    client: null, user: null, ownIds: new Set(), follows: new Set(), rsvpRows: [], eventLinks: Object.create(null),
+    viewCounts: Object.create(null), viewCountsError: false, viewsSent: new Set(), loaded: false, error: "",
   };
 
   function loadScript(src) {
@@ -6199,6 +6215,37 @@
     savePostedUpdates();
   }
 
+  function utcDay(offsetDays = 0) {
+    return new Date(Date.now() + offsetDays * DAY_MS).toISOString().slice(0, 10);
+  }
+
+  function recordMemberView(profile) {
+    if (!account.client || !account.user || account.user.is_anonymous || !profile.remoteId) return;
+    const key = `${profile.remoteId}:${utcDay()}`;
+    if (account.viewsSent.has(key)) return;
+    account.viewsSent.add(key);
+    account.client.from(PROFILE_VIEWS_TABLE).insert({ profile_id: profile.remoteId }).then(() => {}, () => {});
+  }
+
+  async function loadProfileViewCounts() {
+    account.viewCounts = Object.create(null);
+    account.viewCountsError = false;
+    if (!account.user || !account.ownIds.size || !document.getElementById("member-dashboard")) return;
+    const { data, error } = await account.client.from(PROFILE_VIEW_COUNTS).select("profile_id,day,views")
+      .in("profile_id", [...account.ownIds]).gte("day", utcDay(-30)).limit(1000);
+    if (error) {
+      account.viewCountsError = true;
+      return;
+    }
+    const weekStart = utcDay(-7);
+    for (const row of data || []) {
+      if (typeof row.profile_id !== "string" || !Number.isInteger(row.views)) continue;
+      const counts = account.viewCounts[row.profile_id] ||= { week: 0, month: 0 };
+      counts.month += row.views;
+      if (row.day >= weekStart) counts.week += row.views;
+    }
+  }
+
   function markOwnMemberProfiles() {
     for (const profile of profiles) if (profile.member) profile.mine = Boolean(account.user && account.ownIds.has(profile.remoteId));
   }
@@ -6252,6 +6299,8 @@
         window.setTimeout(async () => {
           const [ownLoaded] = await Promise.all([loadOwnProfileIds(), loadMemberResponses(), loadMemberFollows(), loadMemberRsvps()]);
           if (!ownLoaded) account.ownIds = new Set();
+          account.viewsSent.clear();
+          await loadProfileViewCounts();
           markOwnMemberProfiles();
           refreshAccountViews();
         }, 0);
@@ -6260,6 +6309,7 @@
         loadMemberProfiles(), loadMemberOpportunities(), loadMemberResponses(), loadMemberUpdates(), loadMemberFollows(),
         loadMemberEvents(), loadMemberRsvps(),
       ]);
+      await loadProfileViewCounts();
     } catch {
       account.error = "Sign-in isn't available right now. Refresh the page to try again.";
     }
@@ -6307,6 +6357,7 @@
     }
     if (account.user) {
       body.append(element("p", "dialog-copy", `Signed in as ${account.user.email}. Company profiles you create or edit now are published to your account and show in the directory for everyone.`));
+      body.append(element("p", "form-hint", "When you open a published company's profile, BOND records that you viewed it that day so the company sees a daily total. Companies never see who viewed. BOND keeps these records for 90 days and deletes them with your account."));
       const drafts = profiles.filter((profile) => profile.local);
       if (drafts.length) body.append(importPanel(drafts, "account"));
       const actions = element("div", "account-actions");
