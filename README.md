@@ -1,8 +1,8 @@
 # BOND — Business Opportunity Network & Discovery
 
-**Domain:** https://joinbond.world (registered at Namecheap; not yet connected to Vercel)  
-**Hosting:** Vercel (project `bond`, static files from `dist/`)  
-**Original site:** https://joinbond.mejia1604.chatgpt.site (ChatGPT Sites; retire after the Vercel site is live)  
+**Domain:** https://joinbond.world (registered at Namecheap; served by Vercel, with www)  
+**Hosting:** Vercel (project `bond`, static files from `dist/` plus the functions in `api/`)  
+**Original site:** https://joinbond.mejia1604.chatgpt.site (ChatGPT Sites; still published until the owner unpublishes it)  
 **GitHub repository:** https://github.com/qv6zktmm6r-wq/BOND  
 **Tagline:** Where businesses connect.
 
@@ -15,23 +15,23 @@ Clone this repository and open the folder in Cursor:
 ```bash
 git clone https://github.com/qv6zktmm6r-wq/BOND.git
 cd BOND
-python3 -m http.server 3000 --directory dist
+PORT=3018 node scripts/dev-server.js
 ```
 
-Open http://localhost:3000. The site is plain HTML, CSS, and JavaScript; it needs no dependency installation or build step. To stop the local server, press Ctrl+C.
+Open http://127.0.0.1:3018 (use `127.0.0.1`, not `localhost`, so the sign-in bot check accepts the page). The site is plain HTML, CSS, and JavaScript; it needs no dependency installation or build step. The dev server applies the security headers from `vercel.json` and runs the functions in `api/`; live audio needs the LiveKit variables described below. Sign-in and published profiles use the live Supabase project. To stop the server, press Ctrl+C.
 
 ## Project files
 
 - `dist/index.html` — homepage and business discovery.
 - `dist/expos.html` — interactive expo preview.
 - `dist/company.html` — company profile preview.
-- `dist/dashboard.html` — member dashboard (connections, messages, opportunities, events you host and attend), built from what the visitor saved in this browser; styles in `dist/dashboard.css`.
+- `dist/dashboard.html` — member dashboard (your companies, connections, messages, opportunities, profile views, events you host and attend), built from the signed-in account plus what the visitor saved in this browser; styles in `dist/dashboard.css`.
 - `dist/room.html` — an Opportunity Room (project, team, conversation, proposals, meetings), opened from the homepage "Opportunity Rooms" section or the dashboard; rooms are saved in this browser (`localStorage` key `bond.demo.rooms`); styles in `dist/rooms.css`.
 - `dist/app.js` — shared interactions, demo profiles, filters, and browser-local behavior.
 - `dist/*.css` — styles; `dist/homepage.css` holds the homepage discovery section (search, industry strip, featured businesses, next-expo preview) and the directory filter bar; `dist/expo-floor.css` holds the Live Expos booth floor; `dist/spotlight.css` holds the Spotlight premiere timeline and Live Q&A panel; `dist/matches.css` holds business matchmaking (homepage try-it, suggested matches on profiles, post-signup matches); `dist/profiles.css` holds the company profile page, including the contact bar, section navigation, intro video, certifications, and projects. `dist/board.css` holds the Opportunity Board (posting, responses, companies that could fit) the Company Activity feed (updates, follow, start a conversation), and company-hosted events (homepage Upcoming events, Host an event form, RSVP, add to calendar).
 - `dist/assets/` — BOND logos and photography, including the `industry-*.jpg` tiles and the `project-*.jpg` sample portfolio photos.
 - `dist/assets/qa/` — synthetic sample voice clips for the Live Q&A tab (see `ASSET_NOTES.md`).
-- Uploaded intro videos and project photos are stored in the visitor's browser (IndexedDB database `bond-demo-media`); profile text stays in `localStorage`.
+- Uploaded intro videos and project photos are stored in the visitor's browser (IndexedDB database `bond-demo-media`); browser drafts of profiles stay in `localStorage`, and published profiles are in Supabase (below).
 - Voice Q&A: a visitor raises a hand, the representative passes the mic, and the visitor talks with live captions and an on-air banner on the stage. A copy of the recording is saved in the same IndexedDB database (`qa-recording:<id>`), and its caption text is stored with the question in `localStorage`.
 
 ## Live audio (LiveKit)
@@ -84,15 +84,15 @@ Company sign-in and published profiles run on [Supabase](https://supabase.com) (
 - Browser drafts made before signing in can be moved into the account from the dashboard or the Account dialog.
 - `dist/app.js` loads `dist/vendor/supabase-2.117.3.js` (MIT, npm integrity verified, served from this site) only where accounts are switched on. Accounts are on everywhere, including joinbond.world (`PUBLIC_ACCOUNTS` in `dist/app.js`; set it to `false` to hide sign-in on joinbond.world while keeping it on previews and local development).
 - The publishable key in `dist/app.js` is public by design. The secret key and database password live only in macOS Keychain under project `bond`.
-- `supabase/migrations/` holds the schema, policies, and storage rules; apply with `supabase db push` after `supabase link --project-ref mdifopcbcvyzfoflnoxz`. `supabase/tests/company_profiles_rls.sql` checks the access rules inside a transaction that is rolled back: `supabase db query --linked -f supabase/tests/company_profiles_rls.sql`.
+- `supabase/migrations/` holds the schema, policies, and storage rules; apply with `supabase db push` after `supabase link --project-ref mdifopcbcvyzfoflnoxz`. Each file in `supabase/tests/` checks one area's access rules inside a transaction that is rolled back and prints PASS or FAIL per check; profiles: `supabase db query --linked -f supabase/tests/company_profiles_rls.sql` (the other files are listed with their features above).
 
 ## Hosting and current behavior
 
-BOND is hosted on Vercel. The repository is no longer linked to ChatGPT Sites (the `.openai/hosting.json` project file was removed). The original ChatGPT Site at https://joinbond.mejia1604.chatgpt.site stays up until it is unpublished from the ChatGPT account; do that only after the Vercel site is live.
+BOND is hosted on Vercel and served at joinbond.world. The repository is no longer linked to ChatGPT Sites (the `.openai/hosting.json` project file was removed). The original ChatGPT Site at https://joinbond.mejia1604.chatgpt.site stays up until the owner unpublishes it from the ChatGPT account.
 
-The `og:url` and `og:image` share-preview tags in `dist/index.html`, `dist/expos.html`, and `dist/company.html` point at https://joinbond.world. Link previews will only show images once that domain is connected to the Vercel project.
+The `og:url` and `og:image` share-preview tags in `dist/index.html`, `dist/expos.html`, and `dist/company.html` point at https://joinbond.world.
 
-The current implementation is an interactive static prototype with fictional demo companies and browser-local behavior. Company accounts and published profiles are built on Supabase (see above) and switched on for previews; Opportunity Board posts, company updates, follows of published companies, and events and RSVPs from published companies are shared through the database; messaging and meeting requests still live in the browser.
+The site mixes fictional sample companies with real member accounts. Sign-in and published company profiles run on Supabase (see above) everywhere, including joinbond.world; Opportunity Board posts and responses, company updates, follows and saves of published companies, events and RSVPs, and profile view counts are shared through the database. Messages, meeting and introduction requests, Opportunity Rooms, intro videos, and project photos still live in the visitor's browser.
 
 Routes:
 
@@ -109,17 +109,11 @@ Routes:
 - Tone: confident, practical, welcoming; clear distinctions between demos, real accounts, self-reported ownership, and certification.
 - Imagery: representative business owners across industries and backgrounds.
 
-## Planned improvements
+## Roadmap and releases
 
-1. Improve the current homepage hero, searchable industries, featured profiles, and expo preview.
-2. Expand searchable business discovery with useful filters.
-3. Expand company profiles with branding, video, services, portfolios, representatives, contact controls, and certification status.
-4. Build live expos with company spotlights, clickable profile panels, private chat, and Q&A within the presentation.
-5. Build an opportunity board and company activity feed.
-6. Add company dashboards and private networking.
-7. Build **AI Opportunity Rooms** for capability-based matching, teaming introductions, and opportunity collaboration.
+The roadmap and the status of each item live in `docs/EXPO-CHECKLIST.md`.
 
-Develop improvements on a feature branch, verify the routes and assets on its Vercel preview, then publish by deploying to Vercel production.
+Work happens on the `feature/accounts` branch, which Vercel deploys as a preview. Each change is checked locally and with the database tests in `supabase/tests/`, then `main` is fast-forwarded to the branch; Vercel deploys `main` to joinbond.world.
 
 ## Export verification
 

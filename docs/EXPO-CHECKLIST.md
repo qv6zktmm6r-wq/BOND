@@ -2,7 +2,7 @@
 
 Built from the owner's online EXPO recommendations (October 9, 2026). We work through it top to bottom.
 
-Everything marked done is a **browser-only design preview** on branch `feature/homepage-refresh`: data is sample data or saved in the visitor's own browser. Nothing is sent to a server yet. The "Platform" section at the bottom lists what a real launch needs.
+Everything here is live on joinbond.world. Items marked done that work with published companies (profiles, the Opportunity Board, updates, follows, saves, events, and profile views) are saved in BOND's database for signed-in members; the rest uses sample companies or is saved in the visitor's own browser, as each item says. The "Platform" section at the bottom lists what a full launch still needs.
 
 Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `[!]` waiting on the owner
 
@@ -152,5 +152,5 @@ Working in the preview: rooms are saved in the visitor's browser, the project re
 
 - [x] Hosting moved to Vercel; joinbond.world and www attached to the project
 - [x] Namecheap DNS: A records for `@` and `www` point to 76.76.21.21; parking records removed (October 10, 2026; joinbond.world serves the site)
-- [x] Production deploy of `feature/homepage-refresh` (main fast-forwarded and deployed October 9, 2026; attached to joinbond.world and www, waiting on DNS)
+- [x] Production deploy of `feature/homepage-refresh` (main fast-forwarded and deployed October 9, 2026; attached to joinbond.world and www). Later work ships from `feature/accounts` the same way
 - [!] Unpublish the old ChatGPT Site
