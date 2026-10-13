@@ -12,7 +12,7 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 - [x] Two main buttons: Explore businesses, Create your company profile
 - [x] Visible search field
 - [x] Industry strip with photos (aerospace, engineering, construction, software, logistics, manufacturing, energy)
-- [x] Featured company profiles
+- [x] Featured company profiles: "New on BOND" shows up to four published member companies and hides itself when there are none, so sample companies aren't repeated above the directory
 - [x] Next expo preview
 - [x] Supporting text under "Find the business behind the opportunity"
 - [x] Diverse, natural imagery across industries (7 generated photos, illustrative)
@@ -21,7 +21,8 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 ## Discover Businesses
 
 - [x] Industry tiles with images
-- [x] Featured company cards
+- [x] Featured company cards (published members only)
+- [x] Condensed lists: the directory, expo floor, Opportunity Board, events, and activity feed show every real company or post plus at most two sample ones, with "Show N more" and "Show fewer"; searching or filtering shows every match. Extra directory filters sit behind "More filters", and no photo repeats within a page
 - [x] Advanced filters: industry, headquarters, service area (Southern California, Northern California, nationwide; statewide and nationwide companies count), certification (options built from the certifications companies list; "in progress" ones don't count), company size, and business community, with Clear filters. Company size is a new optional profile field. All of it is self-reported until verification exists
 
 ## 1. Live Expo Floor (signature experience)

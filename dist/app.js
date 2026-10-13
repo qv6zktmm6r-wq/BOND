@@ -1159,7 +1159,38 @@
     }
   }
 
+  const SAMPLE_PREVIEW_LIMIT = 2;
+  const expandedLists = new Set();
+
+  function isSampleProfile(profile) {
+    return !profile.local && !profile.member;
+  }
+
+  function realFirst(items, isSample) {
+    return [...items.filter((item) => !isSample(item)), ...items.filter(isSample)];
+  }
+
+  function condensedItems(key, items, isSample, { filtered = false, noun, render }) {
+    let samples = 0;
+    const preview = items.filter((item) => !isSample(item) || samples++ < SAMPLE_PREVIEW_LIMIT);
+    const hidden = items.length - preview.length;
+    if (filtered || !hidden) return { shown: items, toggle: null };
+    const expanded = expandedLists.has(key);
+    const toggle = element("button", "button button-secondary list-toggle", expanded ? "Show fewer" : `Show ${hidden} more ${noun}`);
+    toggle.type = "button";
+    toggle.dataset.listToggle = key;
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.addEventListener("click", () => {
+      if (expanded) expandedLists.delete(key);
+      else expandedLists.add(key);
+      render();
+      document.querySelector(`[data-list-toggle="${key}"]`)?.focus();
+    });
+    return { shown: expanded ? items : preview, toggle };
+  }
+
   function renderDirectory() {
+    renderFeatured();
     const grid = document.getElementById("company-grid");
     if (!grid) return;
     refreshCertificationOptions();
@@ -1181,17 +1212,22 @@
       const searchText = [profile.name, profile.category, profile.location, profile.description, profile.tagline || "", profile.serviceArea || "", profile.story || "", profile.representative || "", profile.ownership || "", ...profile.services, ...(profile.certifications || [])].join(" ").toLocaleLowerCase();
       return matchesCategory && matchesLocation && matchesServes && matchesOwnership && matchesCertification && matchesSize && (!query || searchText.includes(query));
     });
+    const refined = [locationFilter, servesFilter, ownershipFilter, certificationFilter, sizeFilter].some((value) => value !== "All");
+    const more = document.getElementById("directory-more");
+    if (more && refined) more.open = true;
+    const filtered = currentFilter !== "All" || Boolean(query) || refined;
+    const { shown, toggle } = condensedItems("directory", realFirst(visible, isSampleProfile), isSampleProfile, { filtered, noun: "sample companies", render: renderDirectory });
     const content = document.createDocumentFragment();
-    for (const profile of visible) content.append(createCompanyCard(profile));
+    for (const profile of shown) content.append(createCompanyCard(profile));
+    if (toggle) content.append(toggle);
     if (!visible.length) {
       content.append(element("p", "directory-empty", "No companies match all of these filters. Remove a filter or choose Clear filters."));
     }
     grid.replaceChildren(content);
-    const filtered = currentFilter !== "All" || Boolean(query) || [locationFilter, servesFilter, ownershipFilter, certificationFilter, sizeFilter].some((value) => value !== "All");
     const clear = document.getElementById("directory-clear");
     if (clear) clear.hidden = !filtered;
     const status = document.getElementById("directory-status");
-    if (status) status.textContent = `Showing ${visible.length} of ${profiles.length} company profiles.`;
+    if (status) status.textContent = `Showing ${shown.length} of ${profiles.length} company profiles.`;
     document.querySelectorAll(".filter-btn[data-filter]").forEach((button) => {
       const active = button.dataset.filter === currentFilter;
       button.classList.toggle("is-active", active);
@@ -1200,7 +1236,7 @@
     });
   }
 
-  const featuredIds = ["aero", "fieldstone", "lumen", "nova"];
+  const FEATURED_LIMIT = 4;
   const industryImages = {
     "Aerospace & Defense": "assets/industry-aerospace.jpg",
     Engineering: "assets/industry-engineering.jpg",
@@ -1209,34 +1245,29 @@
     Logistics: "assets/industry-logistics.jpg",
     Manufacturing: "assets/industry-manufacturing.jpg",
     Energy: "assets/industry-energy.jpg",
-    "Professional services": "assets/collaboration.png",
+    "Professional services": "assets/project-creston.jpg",
   };
 
   function renderFeatured() {
     const grid = document.getElementById("featured-grid");
     if (!grid) return;
+    const block = grid.closest(".featured-block");
+    const picks = profiles.filter((profile) => profile.member).slice(0, FEATURED_LIMIT);
+    if (block) block.hidden = !picks.length;
+    grid.closest(".home-highlights")?.classList.toggle("no-featured", !picks.length);
     const content = document.createDocumentFragment();
-    for (const id of featuredIds) {
-      const profile = resolveProfile(id);
-      if (!profile) continue;
+    for (const profile of picks) {
       const card = element("article", "featured-card");
-      const cover = element("div", "featured-cover");
-      const image = element("img");
-      image.src = industryImages[profile.category] || "assets/expo-hero.png";
-      image.alt = "";
-      image.loading = "lazy";
-      image.decoding = "async";
-      cover.append(image);
       const logo = element("div", "company-avatar featured-logo");
       logo.append(companyLogo(profile));
       const body = element("div", "featured-body");
       body.append(element("p", "company-category", profile.category), element("h4", "", profile.name), element("p", "featured-location", profile.location));
       const open = element("button", "company-link", "View company profile");
       open.type = "button";
-      open.setAttribute("aria-label", `View ${profile.name} sample profile`);
+      open.setAttribute("aria-label", `View ${profile.name} company profile`);
       open.addEventListener("click", () => openCompany(profile, open));
       body.append(open);
-      card.append(cover, logo, body);
+      card.append(logo, body);
       content.append(card);
     }
     grid.replaceChildren(content);
@@ -1288,8 +1319,9 @@
       button.setAttribute("aria-pressed", String(active));
     });
     const visible = profiles.filter((profile) => currentFloorFilter === "All" || profile.category === currentFloorFilter);
+    const { shown, toggle } = condensedItems("floor", realFirst(visible, isSampleProfile), isSampleProfile, { filtered: currentFloorFilter !== "All", noun: "sample booths", render: renderExpoFloor });
     const content = document.createDocumentFragment();
-    for (const profile of visible) {
+    for (const profile of shown) {
       const booth = element("button", "booth");
       booth.type = "button";
       booth.dataset.presence = presenceOf(profile);
@@ -1301,6 +1333,7 @@
       booth.addEventListener("click", () => openBooth(profile, booth));
       content.append(booth);
     }
+    if (toggle) content.append(toggle);
     grid.replaceChildren(content);
     const available = visible.filter((profile) => presenceOf(profile) !== "away").length;
     const status = document.getElementById("floor-status");
@@ -3582,22 +3615,12 @@
     return `${opportunityTypes[opportunity.type]} · ${opportunity.local || opportunity.member ? `Posted ${shortDate(opportunity.at)}` : "Sample opportunity"}`;
   }
 
-  function opportunityCard(opportunity, { thumbnail = true } = {}) {
+  function opportunityCard(opportunity) {
     const profile = resolveProfile(opportunity.companyId);
     const card = element("article", "opportunity-card");
     const title = element("h3", "", opportunity.title);
     title.id = `opportunity-${opportunity.id}`;
     card.setAttribute("aria-labelledby", title.id);
-    if (thumbnail) {
-      const image = element("img", `opportunity-thumbnail opportunity-thumbnail-${opportunity.type.toLowerCase()}`);
-      image.src = opportunity.type === "Partner" ? "assets/networking.png" : "assets/collaboration.png";
-      image.alt = "";
-      image.width = 720;
-      image.height = 480;
-      image.loading = "lazy";
-      image.decoding = "async";
-      card.append(image);
-    }
     card.append(element("p", "opportunity-type", opportunityLabel(opportunity)));
     card.append(title, element("p", "opportunity-company", profile ? profile.name : ""));
     card.append(element("p", "opportunity-copy", opportunity.summary));
@@ -3619,11 +3642,12 @@
     const grid = document.getElementById("opportunity-grid");
     if (!grid) return;
     const all = allOpportunities();
-    const visible = all.filter((opportunity) => currentOpportunityFilter === "All" || opportunity.type === currentOpportunityFilter);
+    const visible = all.filter((opportunity) => (currentOpportunityFilter === "All" || opportunity.type === currentOpportunityFilter) && resolveProfile(opportunity.companyId));
+    const isSample = (opportunity) => sampleOpportunities.includes(opportunity);
+    const { shown, toggle } = condensedItems("opportunities", visible, isSample, { filtered: currentOpportunityFilter !== "All", noun: "sample opportunities", render: renderOpportunities });
     const cards = document.createDocumentFragment();
-    for (const opportunity of visible) {
-      if (resolveProfile(opportunity.companyId)) cards.append(opportunityCard(opportunity));
-    }
+    for (const opportunity of shown) cards.append(opportunityCard(opportunity));
+    if (toggle) cards.append(toggle);
     grid.replaceChildren(cards);
     document.querySelectorAll("[data-opportunity-filter]").forEach((button) => {
       const active = button.dataset.opportunityFilter === currentOpportunityFilter;
@@ -3634,7 +3658,7 @@
     const status = document.getElementById("opportunity-status");
     if (status) {
       const mine = postedOpportunities.length ? ` ${postedOpportunities.length} posted in this browser.` : "";
-      status.textContent = `Showing ${visible.length} of ${all.length} opportunities.${mine}`;
+      status.textContent = `Showing ${shown.length} of ${all.length} opportunities.${mine}`;
     }
   }
 
@@ -3650,7 +3674,7 @@
     list.append(element("p", "dialog-copy", items.length
       ? isOwn(profile) ? profile.member ? "Requests this company posted. Everyone on BOND can see them." : "Requests this company posted. Saved in this browser." : "Opportunities connected to this company."
       : "No opportunity posts yet."));
-    for (const opportunity of items) list.append(opportunityCard(opportunity, { thumbnail: false }));
+    for (const opportunity of items) list.append(opportunityCard(opportunity));
     if (isOwn(profile)) {
       const post = element("button", "button button-secondary", "Post an opportunity");
       post.type = "button";
@@ -4145,8 +4169,10 @@
         ? "You're not following any companies yet. Tap Follow on an update or a company profile to see its news here."
         : "No updates yet."));
     }
-    posts.slice(0, feedLimit).forEach((post) => feed.append(feedPostCard(post)));
-    if (posts.length > feedLimit) {
+    const { shown, toggle } = condensedItems("feed", posts, (post) => samplePosts.includes(post), { filtered: currentFeedFilter !== "All", noun: "sample updates", render: renderFeed });
+    shown.slice(0, feedLimit).forEach((post) => feed.append(feedPostCard(post)));
+    if (toggle) feed.append(toggle);
+    if (shown.length > feedLimit) {
       const more = element("button", "button button-secondary feed-more", "Show more updates");
       more.type = "button";
       more.addEventListener("click", () => {
@@ -4157,7 +4183,7 @@
     }
     paintFeedFilters();
     const status = document.getElementById("feed-status");
-    if (status) status.textContent = `Showing ${Math.min(posts.length, feedLimit)} of ${posts.length} updates.`;
+    if (status) status.textContent = `Showing ${Math.min(shown.length, feedLimit)} of ${posts.length} updates.`;
   }
 
   function renderCompanyPosts(profile, block) {
@@ -4324,7 +4350,9 @@
         ? "You haven't RSVP'd to an event yet. Open an event and tap RSVP to save your spot."
         : currentEventFilter === "Hosting" ? "You're not hosting an event yet. Tap Host an event to schedule one." : "No upcoming events match this filter."));
     }
-    visible.forEach((event) => grid.append(eventCard(event)));
+    const { shown, toggle } = condensedItems("events", visible, (event) => event.sample, { filtered: currentEventFilter !== "All", noun: "sample events", render: renderEvents });
+    shown.forEach((event) => grid.append(eventCard(event)));
+    if (toggle) grid.append(toggle);
     document.querySelectorAll("[data-event-filter]").forEach((button) => {
       const active = button.dataset.eventFilter === currentEventFilter;
       button.classList.toggle("is-active", active);
@@ -4333,7 +4361,7 @@
     const status = document.getElementById("events-status");
     if (status) {
       const mine = upcoming.filter(hostingEvent).length;
-      status.textContent = `Showing ${visible.length} of ${upcoming.length} upcoming events.${mine ? ` You're hosting ${mine}.` : ""}`;
+      status.textContent = `Showing ${shown.length} of ${upcoming.length} upcoming events.${mine ? ` You're hosting ${mine}.` : ""}`;
     }
   }
 
@@ -9345,7 +9373,6 @@
 
     const renderAll = () => {
       renderDirectory();
-      renderFeatured();
       renderMatchmaker();
       renderRoomBuilder();
       renderOpportunityRoom();

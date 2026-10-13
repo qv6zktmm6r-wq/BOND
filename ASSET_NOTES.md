@@ -6,7 +6,7 @@ Generated and revised with the built-in image-generation tool on October 9, 2026
 
 Asset: `/workspace/sites/joinbond/dist/assets/collaboration.png`
 
-Placement: Home-page opportunity heading, Service and Collaboration opportunity thumbnails.
+Placement: Home-page opportunity heading. Opportunity cards no longer carry thumbnails, so the photo appears once on the page.
 
 Initial brief:
 
@@ -41,7 +41,7 @@ New placement: Home-page company discovery heading. Existing hero and networking
 
 Asset: `/workspace/sites/joinbond/dist/assets/spotlight-selected.png`
 
-On October 9, 2026, the user selected their attached `image(1).png` for the Business Spotlight preview. Copied unchanged into the Site. Used by the shared stage on Home and Live Expos. The other mixed-group photos remain in place. No new generation or image modification was performed.
+On October 9, 2026, the user selected their attached `image(1).png` for the Business Spotlight preview. Copied unchanged into the Site. Used by the shared stage on Home and Live Expos, and nowhere else on either page, so it never appears twice. The other mixed-group photos remain in place. No new generation or image modification was performed.
 
 ## Industry photography
 
@@ -49,7 +49,7 @@ Assets: `dist/assets/industry-aerospace.jpg`, `industry-engineering.jpg`, `indus
 
 Generated with Cursor's built-in image generation on October 9, 2026, at the owner's request, then resized to 800 × 600 JPEG. Each shows two business people from different backgrounds working in that industry, in BOND's navy/cobalt palette, with no text or logos. The people and scenes are illustrative, not real BOND customers.
 
-Placement: Home-page industry strip and featured-business covers. Professional services reuses `collaboration.png`.
+Placement: Home-page industry strip, and the introduction-video backdrop in expo booths for companies without a cover image. The Professional services tile and booth backdrop use `project-creston.jpg`.
 
 ## Sample project photography
 
