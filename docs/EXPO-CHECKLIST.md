@@ -14,6 +14,7 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 - [x] Industry strip with photos (aerospace, engineering, construction, software, logistics, manufacturing, energy)
 - [x] Featured company profiles: "New on BOND" shows up to four published member companies and hides itself when there are none, so sample companies aren't repeated above the directory
 - [x] Next expo preview
+- [x] Live expo advertised as the second section: join the online floor, or host an expo online, in person, or hybrid
 - [x] Supporting text under "Find the business behind the opportunity"
 - [x] Diverse, natural imagery across industries (7 generated photos, illustrative)
 - [!] Industrial grill image for the hero (owner to share)

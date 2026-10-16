@@ -4631,10 +4631,13 @@
   }
 
   function openHostEvent(opener, companyId = "") {
-    const view = prepareDialog("Events · Host an event", "Schedule your event");
+    const asExpo = Boolean(opener?.hasAttribute("data-host-expo"));
+    const view = prepareDialog(asExpo ? "Live expos · Host an expo" : "Events · Host an event", asExpo ? "Host your expo" : "Schedule your event");
     if (!view) return;
     const { dialog, body } = view;
-    body.append(element("p", "dialog-copy", "Host a demo, workshop, open house, or Q&A. It's listed under Upcoming events, on your company profile, and in the activity feed, where followers see it."));
+    body.append(element("p", "dialog-copy", asExpo
+      ? "Host it online, in person, or both. It shows under Upcoming events, on your company profile, and in the activity feed, where followers see it."
+      : "Host a demo, workshop, open house, or Q&A. It's listed under Upcoming events, on your company profile, and in the activity feed, where followers see it."));
     const form = element("form", "opportunity-form event-form");
     const picker = companyPicker("event-company", "Hosted by", { selected: companyId });
     if (!picker.hasOwn) createProfileHint(body);
@@ -4649,7 +4652,7 @@
       return input;
     };
     form.append(picker.label, picker.select);
-    const title = field("input", "event-title", "Event name", { maxLength: 100, required: true, placeholder: "Open house at our new shop" });
+    const title = field("input", "event-title", asExpo ? "Expo name" : "Event name", { maxLength: 100, required: true, placeholder: asExpo ? "Aerospace and engineering showcase" : "Open house at our new shop" });
     const formatLabel = element("label", "", "Format");
     formatLabel.htmlFor = "event-format";
     const format = element("select");
