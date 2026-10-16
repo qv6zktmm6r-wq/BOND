@@ -2291,13 +2291,13 @@
     recordView(profile);
     const cover = element("div", "company-cover");
     const coverImage = element("img", "");
-    const coverNote = element("p", "company-cover-note", profile.cover ? byOrigin(profile, "Uploaded cover · Local preview", "Uploaded cover", "Uploaded cover") : "Concept cover · Design preview");
+    const coverNote = element("p", "company-cover-note", profile.cover ? byOrigin(profile, "Uploaded cover · Local preview", "Uploaded cover", "Uploaded cover") : "Example cover");
     coverImage.src = profile.cover || "assets/expo-hero.png";
     coverImage.alt = profile.cover ? `${profile.name} uploaded cover` : "Concept image for a BOND company profile";
     coverImage.addEventListener("error", () => {
       coverImage.src = "assets/expo-hero.png";
       coverImage.alt = "Concept image for a BOND company profile";
-      coverNote.textContent = "Concept cover · Design preview";
+      coverNote.textContent = "Example cover";
     }, { once: true });
     cover.append(coverImage, coverNote);
     const identity = element("div", "profile-identity");
@@ -2311,7 +2311,7 @@
     meta.append(element("span", "", profile.category), element("span", "", profile.location));
     const ownership = ownershipLabel(profile);
     if (ownership) meta.append(ownership);
-    identityCopy.append(meta, element("span", "profile-preview-status", byOrigin(profile, "Local preview · Stored in this browser", "BOND member · Not verified yet", "Sample company · Design preview")));
+    identityCopy.append(meta, element("span", "profile-preview-status", byOrigin(profile, "Local preview · Stored in this browser", "BOND member · Not verified yet", "Example company")));
     identity.append(brandLogo, identityCopy);
     const layout = element("div", "profile-main-layout");
     const content = element("div", "profile-content");
@@ -3753,7 +3753,7 @@
       ? `Posted by a BOND member company. Responses go only to ${profile.name}.`
       : opportunity.local
         ? "Saved only in this browser. Publish the company to your BOND account so everyone can see its posts."
-        : "Design preview only. This fictional opportunity is not an active solicitation."));
+        : "Example only. This is not a real request."));
     const respond = element("section", "opportunity-respond");
     renderOpportunityResponses(opportunity, respond, opener);
     body.append(respond);
@@ -6890,7 +6890,7 @@
     title.id = "company-dialog-title";
     dialog.setAttribute("aria-labelledby", title.id);
     body.append(title);
-    body.append(element("p", "dialog-copy", "Explore the outline of a sample five-minute Spotlight and its follow-up Q&A. This design preview contains a text overview; uploaded Spotlight videos are planned for launch."));
+    body.append(element("p", "dialog-copy", "This is an example of a five-minute Spotlight and the Q&A that follows. Uploaded Spotlight videos arrive with the launch."));
     const outline = element("ol", "spotlight-outline");
     outline.append(
       element("li", "", "00:00 — Company introduction and story."),
