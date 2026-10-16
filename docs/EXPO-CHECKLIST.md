@@ -85,7 +85,7 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 - [x] Respond to or express interest in a request, as one of your companies or just yourself, with an optional message (voice typing available)
 - [x] Opportunities linked to the posting company's profile (new Opportunities section on every profile) and to "Companies that could fit"
 - [x] Posts from published companies visible to everyone; responses delivered privately to the posting company (with an optional reply contact) and listed on both dashboards
-- [ ] Email notification when a post gets a response
+- [x] Email notification when a post gets a response (the email says a company responded; it does not include the response)
 
 ## 6. Company Activity Feed
 
@@ -93,7 +93,7 @@ Legend: `[x]` done in the preview · `[~]` partly done · `[ ]` not started · `
 - [x] Follow a company from the feed, its profile, or the expo side panel; a Following filter shows only followed companies
 - [x] Start a conversation from a feed post (opens the demo chat with the post quoted)
 - [x] Shared updates and follows visible across devices: updates from published companies are visible to everyone, and follows of published companies made while signed in are saved to the account (private to the member). Updates from browser drafts and sample companies, event announcements, and follows of sample companies stay in the browser
-- [ ] Email notification when a followed company shares an update
+- [x] Email notification when a followed company shares an update (at most one per company per follower per day; the update text stays on BOND)
 
 ## Member Dashboard (medium priority)
 
@@ -117,7 +117,7 @@ Companies host their own demos, workshops, open houses, and Q&As. Free reach onl
 - [x] Add to calendar (downloads a calendar file)
 - [x] Hosts can cancel an event, which also removes its feed post
 - [x] Events from published companies saved to the database and visible to everyone; signed-in members RSVP, the host sees the attendee list (company name or "A BOND member", never an email), and only the host and attendees see the join link
-- [ ] Event reminders by email (shares the sign-in email quota; owner decision on the email plan)
+- [x] Event reminders by email, two hours before a future event, for the host and people who RSVP (no join link in the email; at most 8 notification emails a day per account and 40 a day for the project)
 - [ ] Paid promotion or featured placement (owner decision on pricing)
 
 ## Flagship: AI Opportunity Rooms
@@ -131,7 +131,7 @@ Working: rooms opened as a published company are shared through the database wit
 - [x] Open a private Opportunity Room (`room.html`): project and need coverage, conversation, team, proposals (shortlist, decline), meetings (https meeting link, add to calendar), and close the room; rooms are listed on the homepage and the dashboard
 - [x] Invite a company into a room straight from its Spotlight or profile ("Invite to a room" on the profile dialog, full profile, and expo side panel)
 - [ ] Real AI project reading and partner reasoning (needs the AI provider below)
-- [x] Room invitations reaching the companies, and rooms shared between members: invited companies accept or decline from their dashboard or the room page; joined companies share the conversation and meetings and send sealed proposals only the host can read; the host manages needs, the team, meetings, and proposals and closes the room. Email notifications for invitations are not sent yet
+- [x] Room invitations reaching the companies, and rooms shared between members: invited companies accept or decline from their dashboard or the room page; joined companies share the conversation and meetings and send sealed proposals only the host can read; the host manages needs, the team, meetings, and proposals and closes the room. Invitation emails say the company was invited and link to the room; they do not include the project brief
 - [~] Video meetings: the room stores a meeting link the host pastes (Zoom, Teams, Meet); built-in video needs the video provider
 
 ## Guiding principles
@@ -151,7 +151,7 @@ Working: rooms opened as a published company are shared through the database wit
 - [ ] Business claiming and verification; certification verification (VOSB/SDVOSB and others)
 - [ ] Video hosting and live streaming (cost to scope)
 - [ ] AI provider for matchmaking and Opportunity Rooms (cost to scope)
-- [ ] Email notifications for introductions, messages, and meetings
+- [x] Email notifications for messages and meeting requests (the email names the company and links to the dashboard; it does not include the message). Introduction requests are still kept in the browser, so they are not emailed yet
 
 ## Launch
 
