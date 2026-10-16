@@ -24,7 +24,7 @@
   const MEDIA_BUCKET = "company-media";
   const PROFILES_TABLE = "company_profiles";
   const OWNERS_TABLE = "company_profile_owners";
-  const PROFILE_COLUMNS = "id,name,industry,description,location,tagline,story,services,certifications,projects,service_area,company_size,ownership,representative,website,publish_contact,public_email,public_phone,logo_path,cover_path,founding_number,updated_at";
+  const PROFILE_COLUMNS = "id,name,industry,description,location,tagline,story,services,certifications,projects,service_area,company_size,ownership,representative,website,publish_contact,public_email,public_phone,logo_path,cover_path,founding_number,founding_place,updated_at";
   const OPPORTUNITIES_TABLE = "opportunities";
   const OPPORTUNITY_COLUMNS = "id,profile_id,type,title,summary,scope,seeking,location,created_at";
   const RESPONSES_TABLE = "opportunity_responses";
@@ -1074,9 +1074,9 @@
   }
 
   function foundingBadge(profile) {
-    if (!profile.member || profile.foundingNumber < 1 || profile.foundingNumber > 100) return null;
+    if (!profile.member || profile.foundingPlace < 1 || profile.foundingPlace > 100) return null;
     const badge = element("span", "founding-badge", "Founding Member");
-    badge.title = `Gold Founding Member, ${profile.foundingNumber} of the first 100`;
+    badge.title = `Gold Founding Member, ${profile.foundingPlace} of the first 100`;
     return badge;
   }
 
@@ -7158,6 +7158,7 @@
       publishContact, publicEmail: publishContact ? normalizeEmail(row.public_email) : "", publicPhone: publishContact ? normalizePhone(row.public_phone) : "",
       logo, cover, logoPath: logo ? row.logo_path : "", coverPath: cover ? row.cover_path : "",
       foundingNumber: Number.isInteger(row.founding_number) && row.founding_number > 0 ? row.founding_number : 0,
+      foundingPlace: Number.isInteger(row.founding_place) && row.founding_place > 0 ? row.founding_place : 0,
     };
   }
 
@@ -8159,8 +8160,8 @@
     const { data, error } = await account.client.rpc("founding_spots_remaining");
     if (error || !Number.isInteger(data)) return;
     note.textContent = data > 0
-      ? `${data} of 100 founding places are still open.`
-      : "All 100 founding places have been claimed. The gold badge stays on those profiles.";
+      ? `${data} of 100 gold Founding Member places are still open.`
+      : "All 100 gold Founding Member places have been claimed.";
   }
 
   function bindFeedbackForm() {
@@ -8317,7 +8318,7 @@
       showDialog(dialog, opener);
       return;
     }
-    body.append(element("p", "dialog-copy", "We'll email you a sign-in link. There's no password. New to BOND? The same link creates your account."));
+    body.append(element("p", "dialog-copy", "BOND is launching soon. If you already have an account, we'll email you a sign-in link. There's no password."));
     const form = element("form", "account-form");
     form.noValidate = true;
     const label = element("label", "", "Work email");
@@ -8380,9 +8381,89 @@
       sent.focus();
       announce(`Sign-in link sent to ${email}.`);
     });
-    body.append(form);
+    const list = element("button", "button button-outline", "New here? Get on the founding list");
+    list.type = "button";
+    list.addEventListener("click", () => openFoundingList(opener));
+    body.append(form, list);
     showDialog(dialog, opener);
     input.focus();
+  }
+
+  function openFoundingList(opener) {
+    const view = prepareDialog("Launching soon", "Be one of the first businesses.");
+    if (!view) return;
+    const { dialog, body } = view;
+    body.append(element("p", "dialog-copy", "BOND is launching soon. Get on the list for the gold Founding Member badge. The first 100 businesses on the list receive the gold badge on their profile."));
+    if (!account.client) {
+      body.append(element("p", "dialog-copy", account.error || "The list is still loading. Try again in a moment."));
+      showDialog(dialog, opener);
+      return;
+    }
+    const form = element("form", "account-form");
+    form.noValidate = true;
+    const companyLabel = element("label", "", "Company name");
+    companyLabel.htmlFor = "founding-company";
+    const company = element("input");
+    Object.assign(company, { id: "founding-company", type: "text", name: "company", autocomplete: "organization", maxLength: 120, required: true });
+    const emailLabel = element("label", "", "Work email");
+    emailLabel.htmlFor = "founding-email";
+    const email = element("input");
+    Object.assign(email, { id: "founding-email", type: "email", name: "email", autocomplete: "email", maxLength: 160, required: true });
+    if (account.user?.email) email.value = account.user.email;
+    const submit = element("button", "button button-primary", "Get on the list");
+    submit.type = "submit";
+    const status = element("p", "form-help", "");
+    status.id = "founding-list-status";
+    status.setAttribute("role", "status");
+    form.append(companyLabel, company, emailLabel, email, submit, status);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const companyName = cleanText(company.value, 120);
+      const address = normalizeEmail(cleanText(email.value, 160));
+      if (!companyName) {
+        company.setAttribute("aria-invalid", "true");
+        status.textContent = "Enter your company name.";
+        company.focus();
+        return;
+      }
+      if (!address) {
+        email.setAttribute("aria-invalid", "true");
+        status.textContent = "Enter a valid email address.";
+        email.focus();
+        return;
+      }
+      company.removeAttribute("aria-invalid");
+      email.removeAttribute("aria-invalid");
+      submit.disabled = true;
+      status.textContent = "Saving your place…";
+      const { data, error } = await account.client.rpc("join_founding_list", { signup_email: address, company_name: companyName });
+      submit.disabled = false;
+      if (error) {
+        status.textContent = /full for today/i.test(error.message || "")
+          ? "The list is full for today. Try again tomorrow."
+          : /valid email|company name/i.test(error.message || "")
+            ? error.message
+            : "Your place couldn't be saved. Check your connection and try again.";
+        return;
+      }
+      const place = Number(data?.place);
+      const founding = data?.founding === true && place >= 1 && place <= 100;
+      form.remove();
+      const sent = element("div", "account-sent");
+      sent.append(element("p", "dialog-copy", founding
+        ? `You're number ${place} on the list. The first 100 businesses receive the gold Founding Member badge, and your business is one of them.`
+        : "You're on the list. The first 100 gold Founding Member badges have already been reserved."));
+      sent.append(element("p", "form-hint", "This saves your place. It does not publish a company profile yet."));
+      body.append(sent);
+      loadFoundingSpots();
+      announce(founding ? `You're number ${place} on the founding list.` : "You're on the founding list.");
+    });
+    const preview = element("button", "button button-outline", account.user ? "Create your company profile" : "Preview a company profile");
+    preview.type = "button";
+    preview.addEventListener("click", () => openJoin(opener));
+    body.append(form, preview);
+    showDialog(dialog, opener);
+    company.focus();
   }
 
   async function signedInRecently() {
@@ -9177,7 +9258,7 @@
       button.addEventListener("click", (event) => {
         event.preventDefault();
         closeMenu();
-        openJoin(button);
+        openFoundingList(button);
       });
     });
 

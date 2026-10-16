@@ -30,8 +30,10 @@ declare
   first_number integer;
   second_number integer;
   seen integer;
+  spots_before integer;
 begin
   select next_number into before_next from private.founding_counter;
+  spots_before := public.founding_spots_remaining();
 
   perform set_config('role', 'authenticated', true);
   perform set_config('request.jwt.claims', json_build_object('sub', user_a, 'role', 'authenticated')::text, true);
@@ -52,8 +54,8 @@ begin
   insert into rls_results values ('visitors can see a founding number', seen = first_number);
   insert into rls_results values ('visitors cannot read the founding counter',
     pg_temp.attempt('select next_number from private.founding_counter') = '42501');
-  insert into rls_results values ('the open-places count matches the highest number issued',
-    public.founding_spots_remaining() = greatest(0, 100 - second_number));
+  insert into rls_results values ('publishing a company does not take a place on the founding list',
+    public.founding_spots_remaining() = spots_before);
 
   insert into public.site_feedback (body, contact) values ('The expo should stay near the top.', '');
   insert into rls_results values ('a visitor can send feedback', true);
