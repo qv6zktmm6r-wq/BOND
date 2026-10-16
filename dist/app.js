@@ -24,7 +24,7 @@
   const MEDIA_BUCKET = "company-media";
   const PROFILES_TABLE = "company_profiles";
   const OWNERS_TABLE = "company_profile_owners";
-  const PROFILE_COLUMNS = "id,name,industry,description,location,tagline,story,services,certifications,projects,service_area,company_size,ownership,representative,website,publish_contact,public_email,public_phone,logo_path,cover_path,updated_at";
+  const PROFILE_COLUMNS = "id,name,industry,description,location,tagline,story,services,certifications,projects,service_area,company_size,ownership,representative,website,publish_contact,public_email,public_phone,logo_path,cover_path,founding_number,updated_at";
   const OPPORTUNITIES_TABLE = "opportunities";
   const OPPORTUNITY_COLUMNS = "id,profile_id,type,title,summary,scope,seeking,location,created_at";
   const RESPONSES_TABLE = "opportunity_responses";
@@ -1073,6 +1073,13 @@
     return days < 30 ? `${days} days ago` : shortDate(at);
   }
 
+  function foundingBadge(profile) {
+    if (!profile.member || profile.foundingNumber < 1 || profile.foundingNumber > 100) return null;
+    const badge = element("span", "founding-badge", "Founding Member");
+    badge.title = `Gold Founding Member, ${profile.foundingNumber} of the first 100`;
+    return badge;
+  }
+
   function ownershipLabel(profile) {
     if (!ownershipOptions.includes(profile.ownership)) return null;
     return element("span", "ownership-label", `${profile.ownership} · Self-reported`);
@@ -1099,6 +1106,7 @@
     head.append(avatar, meta);
     const label = byOrigin(profile, "Local preview", profile.mine ? "Your company · Member" : "BOND member", "Sample company");
     const previewLabel = element("span", "sample-label", label);
+    const founding = foundingBadge(profile);
     const location = element("p", "company-location", profile.size ? `${profile.location} · ${profile.size}` : profile.location);
     const description = element("p", "company-description", profile.description);
     const button = element("button", "company-link", "View company profile");
@@ -1106,7 +1114,9 @@
     button.setAttribute("aria-label", `View ${profile.name} sample profile`);
     button.dataset.focusKey = `card-${profile.id}`;
     button.addEventListener("click", () => openCompany(profile, button));
-    card.append(head, previewLabel, location, description);
+    card.append(head, previewLabel);
+    if (founding) card.append(founding);
+    card.append(location, description);
     const ownership = ownershipLabel(profile);
     if (ownership) card.append(ownership);
     if (profile.services.length) card.append(serviceTags(profile));
@@ -1262,6 +1272,8 @@
       logo.append(companyLogo(profile));
       const body = element("div", "featured-body");
       body.append(element("p", "company-category", profile.category), element("h4", "", profile.name), element("p", "featured-location", profile.location));
+      const founding = foundingBadge(profile);
+      if (founding) body.append(founding);
       const open = element("button", "company-link", "View company profile");
       open.type = "button";
       open.setAttribute("aria-label", `View ${profile.name} company profile`);
@@ -2162,6 +2174,8 @@
     container.replaceChildren();
     if (showHeading) {
       container.append(element("p", "dialog-kicker", byOrigin(profile, "Your local sample profile", profile.mine ? "Your company profile" : "BOND member profile", "Sample company profile")));
+      const founding = foundingBadge(profile);
+      if (founding) container.append(founding);
       const title = element(inDialog ? "h2" : "h3", "dialog-heading", profile.name);
       if (inDialog) {
         title.id = "company-dialog-title";
@@ -7143,6 +7157,7 @@
       website: normalizeWebsite(row.website),
       publishContact, publicEmail: publishContact ? normalizeEmail(row.public_email) : "", publicPhone: publishContact ? normalizePhone(row.public_phone) : "",
       logo, cover, logoPath: logo ? row.logo_path : "", coverPath: cover ? row.cover_path : "",
+      foundingNumber: Number.isInteger(row.founding_number) && row.founding_number > 0 ? row.founding_number : 0,
     };
   }
 
@@ -8138,6 +8153,45 @@
     return url.href;
   }
 
+  async function loadFoundingSpots() {
+    const note = document.getElementById("founding-remaining");
+    if (!note || !account.client) return;
+    const { data, error } = await account.client.rpc("founding_spots_remaining");
+    if (error || !Number.isInteger(data)) return;
+    note.textContent = data > 0
+      ? `${data} of 100 founding places are still open.`
+      : "All 100 founding places have been claimed. The gold badge stays on those profiles.";
+  }
+
+  function bindFeedbackForm() {
+    const form = document.getElementById("feedback-form");
+    if (!form || form.dataset.bound || !account.client) return;
+    form.dataset.bound = "true";
+    const status = document.getElementById("feedback-status");
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submit = form.querySelector("button[type=submit]");
+      const body = cleanText(form.elements.feedback?.value || "", 1000);
+      const contact = cleanText(form.elements.contact?.value || "", 160);
+      if (!body) {
+        if (status) status.textContent = "Write a note before sending.";
+        form.elements.feedback?.focus();
+        return;
+      }
+      if (submit) submit.disabled = true;
+      if (status) status.textContent = "Sending…";
+      const { error } = await account.client.from("site_feedback").insert({ body, contact });
+      if (submit) submit.disabled = false;
+      if (error) {
+        const limited = /3 notes a day|full for today/i.test(error.message || "");
+        if (status) status.textContent = limited ? error.message : "That note couldn't be sent. Check your connection and try again.";
+        return;
+      }
+      form.reset();
+      if (status) status.textContent = "Sent. Thank you. Only BOND can read this.";
+    });
+  }
+
   async function initAccounts() {
     if (!ACCOUNTS_ENABLED) return;
     const arriving = new URLSearchParams(window.location.search).has("code") || /error_description=/.test(window.location.hash + window.location.search);
@@ -8147,6 +8201,8 @@
       account.client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
         auth: { flowType: "pkce", detectSessionInUrl: true, persistSession: true, autoRefreshToken: true, storageKey: AUTH_STORAGE_KEY },
       });
+      bindFeedbackForm();
+      loadFoundingSpots();
       const { data } = await account.client.auth.getSession();
       account.user = data?.session?.user || null;
       account.client.auth.onAuthStateChange((event, session) => {
