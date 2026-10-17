@@ -1478,7 +1478,20 @@
           const persisted = writeStoredValue(INTROS_KEY, [...introRequests]);
           intro.textContent = "Introduction requested";
           intro.setAttribute("aria-label", `Introduction requested to ${match.profile.name}`);
-          status.textContent = persisted ? "Saved in this browser. BOND will send introductions when it launches." : "Saved for this visit; browser storage is unavailable.";
+          if (match.profile.member && account.user && account.client && match.profile.remoteId) {
+            status.textContent = "Sending…";
+            account.client.from("introduction_requests").insert({
+              requester_id: account.user.id,
+              company_id: match.profile.remoteId,
+            }).then(({ error }) => {
+              if (!error || error.code === "23505") status.textContent = "Sent. The company will get an email.";
+              else status.textContent = persisted ? "Saved in this browser. It could not be sent just now." : "It could not be sent, and browser storage is unavailable.";
+            });
+            return;
+          }
+          status.textContent = match.profile.member
+            ? "Saved in this browser. Sign in to send it to the company."
+            : persisted ? "Saved in this browser. Example companies stay on this device." : "Saved for this visit; browser storage is unavailable.";
         });
         item.append(intro, status);
       }
@@ -6636,6 +6649,53 @@
           dashboardButton("Share an update", "button button-secondary", `share-${profile.id}`, (button) => openShareUpdate(button, profile.id)),
           dashboardButton("Host an event", "button button-secondary", `host-${profile.id}`, (button) => openHostEvent(button, profile.id)),
         );
+        if (profile.member && account.user && account.foundedIds.has(profile.remoteId)) {
+          const form = element("form", "rep-invite");
+          const email = element("input");
+          email.type = "email";
+          email.required = true;
+          email.maxLength = 160;
+          email.autocomplete = "email";
+          email.placeholder = "Teammate's email";
+          email.setAttribute("aria-label", `Email of a person who can manage ${profile.name}`);
+          const submit = element("button", "button button-secondary", "Add");
+          submit.type = "submit";
+          const note = element("p", "form-hint");
+          note.setAttribute("role", "status");
+          form.append(email, submit, note);
+          form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const address = normalizeEmail(email.value);
+            if (!address) {
+              note.textContent = "Enter an email address.";
+              return;
+            }
+            submit.disabled = true;
+            const { data, error } = await account.client.rpc("invite_company_representative", {
+              profile: profile.remoteId,
+              representative_email: address,
+            });
+            submit.disabled = false;
+            if (error || !data || data.ok !== true) {
+              const reason = data && data.reason;
+              note.textContent = reason === "founder"
+                ? "Only the person who created this company can add someone."
+                : reason === "limit"
+                  ? "This company already has five people."
+                  : reason === "self"
+                    ? "You're already on this company."
+                    : "That person couldn't be added. Check the email and try again.";
+              return;
+            }
+            email.value = "";
+            note.textContent = data.pending
+              ? "Saved. They can manage this company when they sign in with that email."
+              : data.already
+                ? "They're already on this company."
+                : "Added. They'll get an email.";
+          });
+          row.append(form);
+        }
         list.append(row);
       }
       companies.append(list);
@@ -7055,7 +7115,7 @@
   }
 
   const account = {
-    client: null, user: null, ownIds: new Set(), follows: new Set(), saves: new Set(), rsvpRows: [], eventLinks: Object.create(null),
+    client: null, user: null, ownIds: new Set(), foundedIds: new Set(), follows: new Set(), saves: new Set(), rsvpRows: [], eventLinks: Object.create(null),
     viewCounts: Object.create(null), viewCountsError: false, viewsSent: new Set(), loaded: false, error: "",
     conversations: [], conversationsError: false, threads: Object.create(null),
     rooms: [], roomsError: false, roomsToken: null, roomsUser: null, roomDetails: Object.create(null),
@@ -7173,14 +7233,29 @@
   }
 
   async function loadOwnProfileIds() {
-    if (!account.user) {
-      account.ownIds = new Set();
-      return true;
+    account.ownIds = new Set();
+    account.foundedIds = new Set();
+    if (!account.user) return true;
+    const { data, error } = await account.client.rpc("my_company_roles");
+    if (error || !Array.isArray(data)) return false;
+    for (const row of data) {
+      if (!row || typeof row.profile_id !== "string") continue;
+      account.ownIds.add(row.profile_id);
+      if (row.founder) account.foundedIds.add(row.profile_id);
     }
-    const { data, error } = await account.client.from(OWNERS_TABLE).select("profile_id").limit(MAX_MEMBER_PROFILES * 4);
-    if (error) return false;
-    account.ownIds = new Set((Array.isArray(data) ? data : []).map((row) => row.profile_id).filter((id) => typeof id === "string"));
     return true;
+  }
+
+  async function loadIntroductionRequests() {
+    if (!account.user || !account.client) return;
+    const { data, error } = await account.client.rpc("my_introduction_requests");
+    if (error || !Array.isArray(data)) return;
+    for (const id of data) if (typeof id === "string") introRequests.add(`m-${id}`);
+  }
+
+  async function acceptCompanyInvites() {
+    if (!account.user || !account.client) return;
+    await account.client.rpc("accept_company_invites");
   }
 
   async function loadMemberProfiles() {
@@ -8206,6 +8281,7 @@
       loadFoundingSpots();
       const { data } = await account.client.auth.getSession();
       account.user = data?.session?.user || null;
+      await acceptCompanyInvites();
       account.client.auth.onAuthStateChange((event, session) => {
         const next = session?.user || null;
         const changed = (next?.id || "") !== (account.user?.id || "");
@@ -8215,8 +8291,9 @@
         clearRoomState();
         refreshSharedRoomPage();
         window.setTimeout(async () => {
+          await acceptCompanyInvites();
           const [ownLoaded] = await Promise.all([
-            loadOwnProfileIds(), loadMemberResponses(), loadMemberFollows(), loadMemberSaves(), loadMemberRsvps(), loadMemberConversations(),
+            loadOwnProfileIds(), loadIntroductionRequests(), loadMemberResponses(), loadMemberFollows(), loadMemberSaves(), loadMemberRsvps(), loadMemberConversations(),
             loadMemberRooms(),
           ]);
           if (!ownLoaded) account.ownIds = new Set();
@@ -8227,7 +8304,7 @@
         }, 0);
       });
       await Promise.all([
-        loadMemberProfiles(), loadMemberOpportunities(), loadMemberResponses(), loadMemberUpdates(), loadMemberFollows(),
+        loadMemberProfiles(), loadIntroductionRequests(), loadMemberOpportunities(), loadMemberResponses(), loadMemberUpdates(), loadMemberFollows(),
         loadMemberSaves(), loadMemberEvents(), loadMemberRsvps(), loadMemberConversations(), loadMemberRooms(),
       ]);
       await loadProfileViewCounts();
@@ -8520,7 +8597,7 @@
       return;
     }
     const email = account.user.email || "";
-    const published = profiles.filter((profile) => profile.member && profile.mine).length;
+    const published = profiles.filter((profile) => profile.member && account.foundedIds.has(profile.remoteId)).length;
     body.append(element("p", "dialog-copy", published
       ? `This permanently deletes the BOND account for ${email} and its ${published} published company ${published === 1 ? "profile" : "profiles"}, including logos and cover images. Other members won't see ${published === 1 ? "it" : "them"} anymore.`
       : `This permanently deletes the BOND account for ${email}.`));
@@ -8759,7 +8836,7 @@
 
   async function importLocalDrafts(status) {
     const drafts = profiles.filter((profile) => profile.local);
-    const room = MAX_MEMBER_PROFILES - profiles.filter((profile) => profile.member && profile.mine).length;
+    const room = MAX_MEMBER_PROFILES - profiles.filter((profile) => profile.member && account.foundedIds.has(profile.remoteId)).length;
     if (!drafts.length) return;
     if (room <= 0) {
       status.textContent = `Your account already has ${MAX_MEMBER_PROFILES} company profiles. Delete one to move a draft.`;
