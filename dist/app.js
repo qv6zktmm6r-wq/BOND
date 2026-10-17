@@ -2,9 +2,23 @@
   "use strict";
 
   const heroFilm = document.querySelector("#home .hero-film");
-  if (heroFilm && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    heroFilm.removeAttribute("autoplay");
-    heroFilm.pause();
+  if (heroFilm) {
+    heroFilm.muted = true;
+    heroFilm.defaultMuted = true;
+    heroFilm.playsInline = true;
+    heroFilm.controls = false;
+    heroFilm.setAttribute("muted", "");
+    heroFilm.setAttribute("playsinline", "");
+    const keepHeroPlaying = () => {
+      if (document.hidden || !heroFilm.paused) return;
+      const attempt = heroFilm.play();
+      if (attempt) attempt.catch(() => {});
+    };
+    keepHeroPlaying();
+    heroFilm.addEventListener("loadeddata", keepHeroPlaying);
+    heroFilm.addEventListener("canplay", keepHeroPlaying);
+    heroFilm.addEventListener("pause", keepHeroPlaying);
+    document.addEventListener("visibilitychange", keepHeroPlaying);
   }
 
   const STORAGE_KEY = "bond.demo.profiles";
