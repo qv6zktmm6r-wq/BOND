@@ -12,7 +12,7 @@
   <meta property="og:url" content="https://joinbond.world">
   <meta property="og:image" content="https://joinbond.world/assets/globe-hero.png">
   <link rel="icon" href="assets/bond-symbol.png" type="image/png">
-  <link rel="preload" href="assets/globe-hero.png" as="image">
+  <link rel="preload" href="assets/globe-hero-still.jpg" as="image">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="enhancements.css">
   <link rel="stylesheet" href="profiles.css">
@@ -22,7 +22,6 @@
   <link rel="stylesheet" href="homepage.css">
   <link rel="stylesheet" href="board.css">
   <link rel="stylesheet" href="rooms.css">
-  <script src="hero-globe.js" defer></script>
   <script src="live-audio.js" defer></script>
   <script src="app.js" defer></script>
 </head>
@@ -44,8 +43,9 @@
   </header>
   <main id="main">
     <section id="home" class="hero" aria-labelledby="hero-title">
-      <img class="hero-art" src="assets/globe-hero.png" alt="" width="1672" height="941" fetchpriority="high">
-      <canvas id="hero-globe" class="hero-globe" aria-hidden="true"></canvas>
+      <video class="hero-art hero-film" autoplay muted loop playsinline poster="assets/globe-hero-still.jpg" width="1920" height="1080">
+        <source src="assets/globe-hero.mp4" type="video/mp4">
+      </video>
       <div class="hero-shade"></div>
       <div class="container hero-inner">
         <div class="hero-copy">

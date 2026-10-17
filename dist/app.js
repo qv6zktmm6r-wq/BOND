@@ -1,6 +1,12 @@
 (() => {
   "use strict";
 
+  const heroFilm = document.querySelector("#home .hero-film");
+  if (heroFilm && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    heroFilm.removeAttribute("autoplay");
+    heroFilm.pause();
+  }
+
   const STORAGE_KEY = "bond.demo.profiles";
   const MESSAGES_KEY = "bond.demo.messages";
   const SAVED_KEY = "bond.demo.saved";
